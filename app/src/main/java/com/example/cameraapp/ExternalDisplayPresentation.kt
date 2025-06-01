@@ -6,20 +6,23 @@ import android.os.Bundle
 import android.util.Log
 import android.view.Display
 import android.view.ViewGroup
-import androidx.camera.core.Preview
+import androidx.camera.core.Preview // Explicit import for Preview.SurfaceProvider
 import androidx.camera.view.PreviewView
 
 class ExternalDisplayPresentation(
-    outerContext: Context,
+    context: Context, // Activity context
     display: Display,
-    private val existingPreviewUseCase: Preview?
-) : Presentation(outerContext, display) {
+    private val onSurfaceProviderReady: (Preview.SurfaceProvider) -> Unit,
+    private val onDismissed: () -> Unit
+) : Presentation(context, display) {
 
     private lateinit var externalPreviewView: PreviewView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        externalPreviewView = PreviewView(context).apply {
+        Log.d("ExternalDisplay", "Presentation onCreate for display: ${display.name}")
+        // Use getContext() as it's the context for the Presentation window
+        externalPreviewView = PreviewView(getContext()).apply {
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
@@ -27,36 +30,35 @@ class ExternalDisplayPresentation(
             scaleType = PreviewView.ScaleType.FILL_CENTER
         }
         setContentView(externalPreviewView)
-        Log.d("ExternalDisplay", "Presentation onCreate for display: ${display.name}")
     }
 
     override fun onStart() {
         super.onStart()
-        Log.d("ExternalDisplay", "Presentation onStart, attempting to set SurfaceProvider.")
-        try {
-            existingPreviewUseCase?.setSurfaceProvider(externalPreviewView.surfaceProvider)
-            Log.d("ExternalDisplay", "SurfaceProvider set on external PreviewView.")
-        } catch (e: Exception) {
-            Log.e("ExternalDisplay", "Error setting surface provider on external PreviewView", e)
+        Log.d("ExternalDisplay", "Presentation onStart, invoking onSurfaceProviderReady.")
+        // Best to ensure the view is attached to the window and its surface is ready.
+        // Posting to the view's message queue helps ensure this.
+        externalPreviewView.post {
+            if (isShowing && window != null) { // Check if presentation is still active
+                 Log.d("ExternalDisplay", "External PreviewView surface provider is now being sent.")
+                onSurfaceProviderReady(externalPreviewView.surfaceProvider)
+            } else {
+                Log.w("ExternalDisplay", "Presentation not showing or window null when surface provider was to be sent.")
+            }
         }
     }
 
+    // onStop is a good place to signal dismissal if the display is removed or presentation is explicitly stopped.
     override fun onStop() {
-        super.onStop()
-        Log.d("ExternalDisplay", "Presentation onStop, attempting to clear SurfaceProvider.")
-        try {
-            // Important: Clear the surface provider so the main activity can reclaim it.
-            // This is crucial if the same Preview use case is shared.
-            existingPreviewUseCase?.setSurfaceProvider(null)
-            Log.d("ExternalDisplay", "SurfaceProvider cleared from external PreviewView.")
-        } catch (e: Exception) {
-            Log.e("ExternalDisplay", "Error clearing surface provider from external PreviewView", e)
-        }
+        super.onStop() // Call super first
+        Log.d("ExternalDisplay", "Presentation onStop, invoking onDismissed.")
+        onDismissed()
     }
 
-    fun release() {
-        // Custom method to ensure resources are cleaned up if needed,
-        // though onStop should handle SurfaceProvider.
-        Log.d("ExternalDisplay", "Presentation release called.")
-    }
+    // onDismiss is called when the dialog is dismissed (e.g. by calling dismiss() or if display is removed)
+    // This is another valid place for onDismissed, but onStop is more general for window detachment.
+    // override fun onDismiss() {
+    //     super.onDismiss()
+    //     Log.d("ExternalDisplay", "Presentation onDismiss, invoking onDismissed.")
+    //     onDismissed()
+    // }
 }

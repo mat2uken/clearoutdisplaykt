@@ -3,17 +3,17 @@ package com.example.cameraapp
 import android.Manifest
 import android.content.Context
 import android.hardware.camera2.CameraMetadata
-import android.hardware.camera2.CaptureRequest
-import android.hardware.display.DisplayManager
+// import android.hardware.camera2.CaptureRequest // Not directly used here anymore
+// import androidx.camera.camera2.interop.Camera2CameraControl // Not directly used here anymore
+// import androidx.camera.camera2.interop.CaptureRequestOptions // Not directly used here anymore
+// import android.hardware.display.DisplayManager // Replaced by DisplayService
 import android.os.Bundle
 import android.util.Log
 import android.util.Rational
-import android.view.Display
-import android.widget.Toast
+import android.view.Display // Still needed for Display.DEFAULT_DISPLAY
+import android.widget.Toast // Keep for now, though can be moved to VM/events
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.camera.camera2.interop.Camera2CameraControl
-import androidx.camera.camera2.interop.CaptureRequestOptions
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
@@ -38,26 +38,26 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.camera.core.*
-import androidx.camera.core.Preview as CameraXPreview // Alias to avoid name clash
-import androidx.camera.lifecycle.ProcessCameraProvider
-import androidx.camera.view.PreviewView
-import androidx.core.content.ContextCompat
+import androidx.camera.core.Preview as CameraXPreview
+// import androidx.camera.lifecycle.ProcessCameraProvider // Not directly used here
+// import androidx.core.content.ContextCompat // Not directly used here
 import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.cameraapp.camera.CameraXServiceImpl
+import com.example.cameraapp.display.AndroidDisplayService // Import AndroidDisplayService
 import com.example.cameraapp.ui.theme.CameraAppTheme
 import com.google.accompanist.permissions.*
-import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
-@OptIn(ExperimentalPermissionsApi::class) // Required for Accompanist Permissions
+@OptIn(ExperimentalPermissionsApi::class)
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            CameraAppTheme { // Apply the theme here
+            CameraAppTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background // Use theme background
+                    color = MaterialTheme.colorScheme.background
                 ) {
                     HandleCameraPermission()
                 }
@@ -70,37 +70,22 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun HandleCameraPermission() {
     val cameraPermissionState = rememberPermissionState(Manifest.permission.CAMERA)
-
     when {
-        cameraPermissionState.status.isGranted -> {
-            CameraScreen()
-        }
+        cameraPermissionState.status.isGranted -> CameraScreen()
         cameraPermissionState.status.shouldShowRationale -> {
-            Column(
-                modifier = Modifier.fillMaxSize().padding(16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
+            Column(modifier = Modifier.fillMaxSize().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
                 Text("Camera permission is required to use this app.", style = MaterialTheme.typography.bodyLarge)
                 Spacer(modifier = Modifier.height(8.dp))
-                Button(onClick = { cameraPermissionState.launchPermissionRequest() }) {
-                    Text("Request permission")
-                }
+                Button(onClick = { cameraPermissionState.launchPermissionRequest() }) { Text("Request permission") }
             }
         }
         else -> {
-            Column(
-                modifier = Modifier.fillMaxSize().padding(16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
+            Column(modifier = Modifier.fillMaxSize().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
                 Text("Camera permission denied. Please enable it in app settings.", style = MaterialTheme.typography.bodyLarge)
                 Spacer(modifier = Modifier.height(8.dp))
-                // Button(onClick = { /* Open app settings intent */ }) { Text("Open Settings") }
             }
         }
     }
-
     LaunchedEffect(key1 = true) {
         if (!cameraPermissionState.status.isGranted && !cameraPermissionState.status.shouldShowRationale) {
             cameraPermissionState.launchPermissionRequest()
@@ -110,172 +95,85 @@ fun HandleCameraPermission() {
 
 @Composable
 fun CameraScreen() {
-    val context = LocalContext.current
+    val context = LocalContext.current // Activity context
     val lifecycleOwner = LocalLifecycleOwner.current
-    val previewView = remember { PreviewView(context).apply {
-        scaleType = PreviewView.ScaleType.FILL_CENTER
-    }}
-    val cameraExecutor: ExecutorService = remember { Executors.newSingleThreadExecutor() }
-    var lensFacing by rememberSaveable { mutableStateOf(CameraSelector.LENS_FACING_BACK) }
 
-    // State for zoom
-    var currentZoomRatio by remember { mutableStateOf(1f) }
-    var minZoomRatio by remember { mutableStateOf(1f) }
-    var maxZoomRatio by remember { mutableStateOf(1f) }
+    val appApplicationContext = context.applicationContext
+    val cameraXService = remember { CameraXServiceImpl(appApplicationContext) }
+    val displayService = remember { AndroidDisplayService(appApplicationContext) }
+    val cameraViewModelFactory = remember(cameraXService, displayService) {
+        CameraViewModelFactory(cameraXService, displayService)
+    }
+    val viewModel: CameraViewModel = viewModel(factory = cameraViewModelFactory)
 
-    // Hold the Camera instance
-    var camera: Camera? by remember { mutableStateOf(null) }
+    val lensFacing by viewModel.lensFacing.collectAsState()
+    val hasFlashUnit by viewModel.hasFlashUnit.collectAsState()
+    val isLedOn by viewModel.isLedOn.collectAsState()
+    val isFlippedHorizontally by viewModel.isFlippedHorizontally.collectAsState()
 
-    // State for Exposure Dialog
+    val currentZoomRatio by viewModel.currentZoomRatio.collectAsState()
+    val minZoomRatio by viewModel.minZoomRatio.collectAsState()
+    val maxZoomRatio by viewModel.maxZoomRatio.collectAsState()
+    val isZoomSupported by viewModel.isZoomSupported.collectAsState()
+
+    val currentExposureIndex by viewModel.currentExposureIndex.collectAsState()
+    val minExposureIndex by viewModel.minExposureIndex.collectAsState()
+    val maxExposureIndex by viewModel.maxExposureIndex.collectAsState()
+    val exposureStep by viewModel.exposureStep.collectAsState()
+    val isExposureSupported by viewModel.isExposureSupported.collectAsState()
+
+    val currentAwbMode by viewModel.currentAwbMode.collectAsState()
+    val currentExternalDisplay by viewModel.externalDisplay.collectAsState() // From ViewModel
+
+    val previewView = remember { PreviewView(context).apply { scaleType = PreviewView.ScaleType.FILL_CENTER } }
+
     var showExposureDialog by remember { mutableStateOf(false) }
-    var currentExposureIndex by remember { mutableStateOf(0) }
-    var minExposureIndex by remember { mutableStateOf(0) }
-    var maxExposureIndex by remember { mutableStateOf(0) }
-    var exposureStep by remember { mutableStateOf<Rational?>(null) }
-    var isExposureSupported by remember { mutableStateOf(false) }
-
-    // LED states
-    var hasFlashUnit by remember { mutableStateOf(false) }
-    var isLedOn by rememberSaveable { mutableStateOf(false) }
-
-    // Flip state
-    var isFlippedHorizontally by rememberSaveable { mutableStateOf(false) }
-
-    // External display states
-    val previewUseCaseRef = remember { mutableStateOf<CameraXPreview?>(null) }
-    var externalPresentation by remember { mutableStateOf<ExternalDisplayPresentation?>(null) }
-    var isOutputtingToExternal by remember { mutableStateOf(false) }
-
-    // White Balance States
+    // val previewUseCaseRef = remember { mutableStateOf<CameraXPreview?>(null) } // No longer needed for external display logic here
+    var localExternalPresentation by remember { mutableStateOf<ExternalDisplayPresentation?>(null) } // local ref to presentation
+    // var isOutputtingToExternal by remember { mutableStateOf(false) } // Replaced by currentExternalDisplay != null
     var showWhiteBalanceDialog by remember { mutableStateOf(false) }
-    var currentAwbMode by rememberSaveable { mutableStateOf(CameraMetadata.CONTROL_AWB_MODE_AUTO) }
-    val isWbSupported by remember { mutableStateOf(true) } // Assume true for now
+    val isWbSupported by remember { mutableStateOf(true) } // Placeholder
 
 
     LaunchedEffect(key1 = lifecycleOwner, key2 = lensFacing) {
-        val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
-        cameraProviderFuture.addListener({
-            try {
-                val cameraProvider = cameraProviderFuture.get()
-                cameraProvider.unbindAll()
-
-                val localPreviewUseCase = CameraXPreview.Builder().build().also {
-                    it.setSurfaceProvider(previewView.surfaceProvider)
-                }
-                previewUseCaseRef.value = localPreviewUseCase
-
-                val cameraSelector = CameraSelector.Builder().requireLensFacing(lensFacing).build()
-
-                val boundCamera = cameraProvider.bindToLifecycle(
-                    lifecycleOwner,
-                    cameraSelector,
-                    localPreviewUseCase
-                )
-                camera = boundCamera
-
-                // Update zoom states
-                boundCamera.cameraInfo.zoomState.observe(lifecycleOwner) { zs ->
-                    minZoomRatio = zs.minZoomRatio; maxZoomRatio = zs.maxZoomRatio
-                }
-                currentZoomRatio = boundCamera.cameraInfo.zoomState.value?.zoomRatio ?: 1f
-
-                // Update exposure states
-                boundCamera.cameraInfo.exposureState.observe(lifecycleOwner) { es ->
-                    isExposureSupported = es.isExposureCompensationSupported
-                    if (isExposureSupported) {
-                        minExposureIndex = es.exposureCompensationRange.lower
-                        maxExposureIndex = es.exposureCompensationRange.upper
-                        exposureStep = es.exposureCompensationStep
-                        currentExposureIndex = es.exposureCompensationIndex
-                    } else {
-                        currentExposureIndex = 0
-                    }
-                }
-                if(isExposureSupported) currentExposureIndex = boundCamera.cameraInfo.exposureState.value?.exposureCompensationIndex ?:0 else currentExposureIndex = 0
-
-                // Update LED/Flash state
-                hasFlashUnit = boundCamera.cameraInfo.hasFlashUnit()
-                if (hasFlashUnit) {
-                    boundCamera.cameraControl.enableTorch(isLedOn).addListener({}, cameraExecutor)
-                } else {
-                    if (isLedOn) isLedOn = false
-                }
-
-                // Apply initial/saved AWB mode
-                if (currentAwbMode != CameraMetadata.CONTROL_AWB_MODE_AUTO) {
-                    try {
-                        val captureRequestBuilder = CaptureRequestOptions.Builder()
-                            .setCaptureRequestOption(CaptureRequest.CONTROL_AWB_MODE, currentAwbMode)
-                        Camera2CameraControl.from(boundCamera.cameraControl).setCaptureRequestOptions(captureRequestBuilder.build())
-                        Log.d("CameraXApp", "Initial AWB mode set to: $currentAwbMode")
-                    } catch (e: Exception) {
-                        Log.e("CameraXApp", "Failed to set initial AWB mode: $currentAwbMode", e)
-                    }
-                }
-
-            } catch (exc: Exception) {
-                Log.e("CameraXApp", "Use case binding or state observation failed: ${exc.localizedMessage}", exc)
-                camera = null; previewUseCaseRef.value = null
-                isExposureSupported = false; hasFlashUnit = false
-                if(isLedOn) isLedOn = false
-            }
-        }, ContextCompat.getMainExecutor(context))
+        Log.d("CameraScreen", "Main LaunchedEffect for camera init. Lens: $lensFacing")
+        viewModel.primaryCameraInit(lifecycleOwner, previewView.surfaceProvider)
     }
 
-    val displayManager = context.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
-    DisposableEffect(key1 = lifecycleOwner, key2 = previewUseCaseRef.value) {
-        val displayListener = object : DisplayManager.DisplayListener {
-            override fun onDisplayAdded(displayId: Int) {
-                val display = displayManager.getDisplay(displayId)
-                if (display != null && display.displayId != Display.DEFAULT_DISPLAY) {
-                    if (externalPresentation == null && previewUseCaseRef.value != null) {
-                        Log.d("CameraXApp", "External display added: ${display.name}")
-                        Toast.makeText(context, "Ext display connected: ${display.name}", Toast.LENGTH_SHORT).show()
-                        previewUseCaseRef.value?.setSurfaceProvider(null)
-                        externalPresentation = ExternalDisplayPresentation(context, display, previewUseCaseRef.value)
-                        externalPresentation?.show()
-                        isOutputtingToExternal = true
+    // Manage ExternalDisplayPresentation lifecycle based on ViewModel state
+    DisposableEffect(currentExternalDisplay) {
+        if (currentExternalDisplay != null) {
+            if (localExternalPresentation == null) {
+                Log.d("CameraScreen", "Creating ExternalDisplayPresentation for: ${currentExternalDisplay?.name}")
+                Toast.makeText(context, "Ext display connected: ${currentExternalDisplay?.name}", Toast.LENGTH_LONG).show()
+                localExternalPresentation = ExternalDisplayPresentation(
+                    context = context, // Activity context is crucial for Presentation
+                    display = currentExternalDisplay!!,
+                    onSurfaceProviderReady = { externalSurfaceProvider ->
+                        Log.d("CameraScreen", "External surface provider ready for display: ${currentExternalDisplay!!.displayId}")
+                        viewModel.attachExternalDisplaySurface(externalSurfaceProvider)
+                    },
+                    onDismissed = {
+                        Log.d("CameraScreen", "ExternalDisplayPresentation dismissed for display: ${currentExternalDisplay!!.displayId}")
+                        viewModel.detachExternalDisplaySurface()
+                        // localExternalPresentation = null // This will be handled by currentExternalDisplay becoming null
                     }
-                }
+                ).also { it.show() }
             }
-            override fun onDisplayRemoved(displayId: Int) {
-                externalPresentation?.let {
-                    if (it.display.displayId == displayId) {
-                        Log.d("CameraXApp", "External display removed: ${it.display.name}")
-                        Toast.makeText(context, "Ext display disconnected: ${it.display.name}", Toast.LENGTH_SHORT).show()
-                        it.dismiss()
-                        externalPresentation = null
-                        isOutputtingToExternal = false
-                        try { previewUseCaseRef.value?.setSurfaceProvider(previewView.surfaceProvider) }
-                        catch (e: Exception) { Log.e("CameraXApp", "Error restoring SP to main PreviewView", e) }
-                    }
-                }
-            }
-            override fun onDisplayChanged(displayId: Int) { }
-        }
-        displayManager.registerDisplayListener(displayListener, null)
-        if (previewUseCaseRef.value != null) {
-            displayManager.displays.find { it.displayId != Display.DEFAULT_DISPLAY }?.let { disp ->
-                if (externalPresentation == null) {
-                    Log.d("CameraXApp", "Initial external display found: ${disp.name}")
-                    Toast.makeText(context, "Initial ext display: ${disp.name}", Toast.LENGTH_SHORT).show()
-                    previewUseCaseRef.value?.setSurfaceProvider(null)
-                    externalPresentation = ExternalDisplayPresentation(context, disp, previewUseCaseRef.value)
-                    externalPresentation?.show()
-                    isOutputtingToExternal = true
-                }
+        } else {
+            localExternalPresentation?.let {
+                Log.d("CameraScreen", "Dismissing ExternalDisplayPresentation as currentExternalDisplay is null.")
+                it.dismiss()
+                localExternalPresentation = null
             }
         }
         onDispose {
-            displayManager.unregisterDisplayListener(displayListener)
-            externalPresentation?.dismiss()
-            if (isOutputtingToExternal) {
-                try { previewUseCaseRef.value?.setSurfaceProvider(previewView.surfaceProvider) }
-                catch (e: Exception) { Log.e("CameraXApp", "Error restoring SP to main PreviewView onDispose", e) }
-            }
-            externalPresentation = null; isOutputtingToExternal = false
+            Log.d("CameraScreen", "ExternalDisplay DisposableEffect onDispose. Dismissing presentation if any.")
+            localExternalPresentation?.dismiss()
+            localExternalPresentation = null
         }
     }
+
 
     Column(modifier = Modifier.fillMaxSize()) {
         Box(modifier = Modifier.weight(1f)) {
@@ -284,51 +182,55 @@ fun CameraScreen() {
                 modifier = Modifier.fillMaxSize()
                     .pointerInput(Unit) {
                         detectTapGestures(onTap = { offset ->
-                            camera?.let { cam ->
-                                val factory = SurfaceOrientedMeteringPointFactory(previewView.width.toFloat(), previewView.height.toFloat())
-                                val meteringPoint = factory.createPoint(offset.x, offset.y)
-                                val action = FocusMeteringAction.Builder(meteringPoint).setAutoCancelDuration(3, TimeUnit.SECONDS).build()
-                                cam.cameraControl.startFocusAndMetering(action).addListener({ Log.d("CameraXApp", "Tap to focus success.") }, cameraExecutor)
+                            if (previewView.width > 0 && previewView.height > 0) {
+                                viewModel.onPreviewTapped(
+                                    viewWidth = previewView.width,
+                                    viewHeight = previewView.height,
+                                    x = offset.x,
+                                    y = offset.y
+                                )
+                            } else {
+                                Log.w("CameraScreen", "PreviewView dimensions are not valid for tap-to-focus.")
                             }
                         })
                     }
                     .scale(scaleX = if (isFlippedHorizontally) -1f else 1f, scaleY = 1f)
             )
-            if (isOutputtingToExternal) {
+            if (currentExternalDisplay != null) { // Use VM state for indicator
                 Text("EXT OUT", color = Color.Red, modifier = Modifier.align(Alignment.TopStart).padding(8.dp).background(Color.White.copy(alpha = 0.7f)).padding(4.dp))
             }
         }
 
-        Column(modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 8.dp)) { // Added bottom padding to this Column
-            if (minZoomRatio < maxZoomRatio) {
+        Column(modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 8.dp)) {
+            if (isZoomSupported) {
                 Slider(
                     value = currentZoomRatio,
-                    onValueChange = { newZoomRatio -> currentZoomRatio = newZoomRatio; camera?.cameraControl?.setZoomRatio(newZoomRatio) },
+                    onValueChange = { viewModel.setZoomRatio(it) },
                     valueRange = minZoomRatio..maxZoomRatio,
                     modifier = Modifier.fillMaxWidth()
                 )
-                Text(String.format("Zoom: %.2fx", currentZoomRatio), modifier = Modifier.align(Alignment.CenterHorizontally).padding(bottom = 4.dp)) // Reduced bottom padding
+                Text(String.format("Zoom: %.2fx", currentZoomRatio), modifier = Modifier.align(Alignment.CenterHorizontally).padding(bottom = 4.dp))
             } else {
                 Text("Zoom: N/A", modifier = Modifier.align(Alignment.CenterHorizontally).padding(vertical = 8.dp))
             }
         }
 
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), // Consistent padding
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.SpaceAround
         ) {
-            Button(onClick = { lensFacing = if (lensFacing == CameraSelector.LENS_FACING_BACK) CameraSelector.LENS_FACING_FRONT else CameraSelector.LENS_FACING_BACK }, modifier = Modifier.padding(2.dp)) {
+            Button(onClick = { viewModel.onSwitchCameraClicked() }, modifier = Modifier.padding(2.dp)) {
                 Icon(Icons.Filled.Cameraswitch, contentDescription = "Switch Camera")
             }
-            Button(onClick = { val newLedState = !isLedOn; camera?.cameraControl?.enableTorch(newLedState)?.addListener({ isLedOn = newLedState }, cameraExecutor) }, enabled = hasFlashUnit, modifier = Modifier.padding(2.dp)) {
+            Button(onClick = { viewModel.onLedButtonClicked() }, enabled = hasFlashUnit, modifier = Modifier.padding(2.dp)) {
                 Icon(if (isLedOn) Icons.Filled.FlashOff else Icons.Filled.FlashOn, contentDescription = if (isLedOn) "Turn LED Off" else "Turn LED On")
             }
-            Button(onClick = { isFlippedHorizontally = !isFlippedHorizontally }, modifier = Modifier.padding(2.dp)) {
+            Button(onClick = { viewModel.onFlipClicked() }, modifier = Modifier.padding(2.dp)) {
                 Icon(Icons.Filled.Flip, contentDescription = if (isFlippedHorizontally) "Unflip Preview" else "Flip Preview")
             }
         }
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp).padding(bottom = 8.dp), // Consistent padding and final bottom padding
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp).padding(bottom = 8.dp),
             horizontalArrangement = Arrangement.SpaceAround
         ){
             Button(onClick = { showExposureDialog = true }, enabled = isExposureSupported, modifier = Modifier.padding(2.dp)) {
@@ -343,23 +245,32 @@ fun CameraScreen() {
     }
 
     if (showExposureDialog && isExposureSupported) {
-        ExposureDialog(currentExposure, minExposure, maxExposure, exposureStep, onDismiss = { showExposureDialog = false }) { newIndex ->
-            currentExposureIndex = newIndex; camera?.cameraControl?.setExposureCompensationIndex(newIndex)
+        ExposureDialog(
+            currentExposure = currentExposureIndex,
+            minExposure = minExposureIndex,
+            maxExposure = maxExposureIndex,
+            exposureStepValue = exposureStep,
+            onDismiss = { showExposureDialog = false }
+        ) { newIndex ->
+            viewModel.setExposureIndex(newIndex)
         }
     }
     if (showWhiteBalanceDialog) {
-        WhiteBalanceDialog(currentAwbMode, onDismiss = { showWhiteBalanceDialog = false }) { selectedMode ->
-            currentAwbMode = selectedMode; showWhiteBalanceDialog = false
-            camera?.let { cam ->
-                try {
-                    val cr = CaptureRequestOptions.Builder().setCaptureRequestOption(CaptureRequest.CONTROL_AWB_MODE, selectedMode).build()
-                    Camera2CameraControl.from(cam.cameraControl).setCaptureRequestOptions(cr).addListener({ Log.d("CameraXApp", "Set AWB to $selectedMode") }, cameraExecutor)
-                } catch (e: Exception) { Log.e("CameraXApp", "Failed to set AWB", e) }
-            }
+        WhiteBalanceDialog(
+            currentMode = currentAwbMode,
+            onDismiss = { showWhiteBalanceDialog = false }
+        ) { selectedMode ->
+            viewModel.onWhiteBalanceModeSelected(selectedMode)
         }
     }
 
-    DisposableEffect(Unit) { onDispose { cameraExecutor.shutdown() } }
+    DisposableEffect(cameraXService) {
+        onDispose {
+            Log.d("CameraScreen", "CameraXService shutdown called from DisposableEffect.")
+            cameraXService.shutdown()
+            // DisplayService is stopped in ViewModel's onCleared
+        }
+    }
 }
 
 @Composable
@@ -384,7 +295,7 @@ fun ExposureDialog(currentExposure: Int, minExposure: Int, maxExposure: Int, exp
 
 @Composable
 fun WhiteBalanceDialog(currentMode: Int, onDismiss: () -> Unit, onModeSelected: (Int) -> Unit) {
-    val wbModes = listOf("Auto" to CameraMetadata.CONTROL_AWB_MODE_AUTO, "Incandescent" to CameraMetadata.CONTROL_AWB_MODE_INCANDESCENT, "Fluorescent" to CameraMetadata.CONTROL_AWB_MODE_FLUORESCENT, "Daylight" to CameraMetadata.CONTROL_AWB_MODE_DAYLIGHT, "Cloudy" to CameraMetadata.CONTROL_AWB_MODE_CLOUDY_DAYLIGHT) // Renamed "Cloudy Daylight" to "Cloudy" for brevity
+    val wbModes = listOf("Auto" to CameraMetadata.CONTROL_AWB_MODE_AUTO, "Incandescent" to CameraMetadata.CONTROL_AWB_MODE_INCANDESCENT, "Fluorescent" to CameraMetadata.CONTROL_AWB_MODE_FLUORESCENT, "Daylight" to CameraMetadata.CONTROL_AWB_MODE_DAYLIGHT, "Cloudy" to CameraMetadata.CONTROL_AWB_MODE_CLOUDY_DAYLIGHT)
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Select White Balance") },
@@ -404,7 +315,7 @@ fun WhiteBalanceDialog(currentMode: Int, onDismiss: () -> Unit, onModeSelected: 
 @Preview(showBackground = true)
 @Composable
 fun DefaultPreview() {
-    CameraAppTheme { // Apply theme to preview as well
+    CameraAppTheme {
         CameraScreen()
     }
 }

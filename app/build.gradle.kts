@@ -77,4 +77,13 @@ dependencies {
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
+
+    // Testing dependencies
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("app.cash.turbine:turbine:1.0.0")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
+    testImplementation("io.mockk:mockk:1.13.8") // For future mocking needs
+    testImplementation("com.google.truth:truth:1.1.5") // For Truth assertions
+    testImplementation("com.google.guava:guava:32.1.3-android") // For Futures.immediateFuture
+
 }
