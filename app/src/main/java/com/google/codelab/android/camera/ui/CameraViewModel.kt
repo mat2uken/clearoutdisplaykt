@@ -233,6 +233,11 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
         if (externalDisplayPresentation == null || externalDisplayPresentation?.display?.displayId != display.displayId) {
             dismissExternalPresentation() // Dismiss any existing one
             externalDisplayPresentation = ExternalDisplayPresentation(getApplication(), display)
+
+            val externalDisplayRotation = display.rotation
+            Log.d("CameraViewModel", "External display (id: ${display.displayId}) rotation: $externalDisplayRotation. Updating PreviewUseCase target rotation.")
+            previewUseCase?.targetRotation = externalDisplayRotation // Update rotation
+
             Log.d("CameraViewModel", "Showing external presentation on display: ${display.displayId}")
             externalDisplayPresentation?.show()
             // If previewUseCase is ready, connect it to the external display's PreviewView
