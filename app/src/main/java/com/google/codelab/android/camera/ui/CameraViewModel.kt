@@ -203,7 +203,7 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private fun registerDisplayListener() {
-        displayManager.registerDisplayListener(displayListener, null)
+        displayManager.registerDisplayListener(displayListener, mainExecutor)
     }
 
     private fun unregisterDisplayListener() {
