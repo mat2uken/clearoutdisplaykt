@@ -3,6 +3,9 @@ package com.google.codelab.android.camera.ui
 import android.app.Application
 import android.content.Context
 import android.hardware.display.DisplayManager
+import android.os.Handler
+import android.os.Looper
+import android.util.Log
 import android.view.Display
 import androidx.camera.core.CameraInfo
 import androidx.camera.core.CameraSelector
@@ -12,8 +15,6 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.compose.runtime.mutableStateOf
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
-import android.os.Handler
-import android.os.Looper
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.viewModelScope
 import com.google.codelab.android.camera.ExternalDisplayPresentation
@@ -92,11 +93,13 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
 
     // --- Camera Control Functions ---
     fun setPreviewUseCase(preview: Preview) {
+        Log.d("CameraViewModel", "New PreviewUseCase received: $preview. currentLifecycleOwner: $currentLifecycleOwner")
         this.previewUseCase = preview
         currentLifecycleOwner?.let { bindCameraUseCases(it) }
     }
 
     fun attachLifecycleOwner(lifecycleOwner: LifecycleOwner) {
+        Log.d("CameraViewModel", "LifecycleOwner attached: $lifecycleOwner. previewUseCase: $previewUseCase")
         currentLifecycleOwner = lifecycleOwner
         if (previewUseCase != null && _cameraProviderFuture.isDone) {
             updateAvailableLenses() // Ensure lenses are checked before binding
@@ -161,26 +164,28 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
             .requireLensFacing(_selectedLensFacing.value)
             .build()
         try {
+            Log.d("CameraViewModel", "Binding camera use cases. Unbinding all first.")
             cameraProvider.unbindAll()
+            Log.d("CameraViewModel", "Binding to lifecycle with selector: ${_selectedLensFacing.value} and preview: $previewUseCase")
             camera = cameraProvider.bindToLifecycle(
                 lifecycleOwner, // USE THE PASSED LIFECYCLE OWNER
                 cameraSelector,
                 previewUseCase
             )
+            Log.d("CameraViewModel", "Successfully bound to lifecycle. Camera: $camera")
             updateZoomLimits(camera?.cameraInfo)
             // Initial zoom update
             setLinearZoom(_linearZoom.value)
 
-            // Update external display if connected
-            externalDisplayPresentation?.getPreviewView()?.let { externalPreviewView ->
-                previewUseCase?.setSurfaceProvider(externalPreviewView.surfaceProvider)
+            if (_isExternalDisplayConnected.value && externalDisplayPresentation != null) {
+                Log.d("CameraViewModel", "Attaching preview to external display's SurfaceProvider.")
+                previewUseCase?.setSurfaceProvider(externalDisplayPresentation!!.getPreviewView().surfaceProvider)
+            } else {
+                Log.d("CameraViewModel", "No external display, or presentation is null. Main screen's PreviewView should be active via CameraScreen.")
             }
-            // Then set the main preview (or handle this more gracefully if both are active)
-            // This needs careful handling if both are to be active simultaneously.
-            // For now, let's assume the external display takes precedence if connected,
-            // or the CameraScreen's PreviewView is set up to connect to this use case.
 
         } catch (exc: Exception) {
+            Log.e("CameraViewModel", "Failed to bind camera use cases", exc)
             _toastMessage.value = "Failed to bind camera: ${exc.message}"
         }
     }
@@ -228,18 +233,20 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
         if (externalDisplayPresentation == null || externalDisplayPresentation?.display?.displayId != display.displayId) {
             dismissExternalPresentation() // Dismiss any existing one
             externalDisplayPresentation = ExternalDisplayPresentation(getApplication(), display)
+            Log.d("CameraViewModel", "Showing external presentation on display: ${display.displayId}")
             externalDisplayPresentation?.show()
             // If previewUseCase is ready, connect it to the external display's PreviewView
             previewUseCase?.setSurfaceProvider(externalDisplayPresentation?.getPreviewView()?.surfaceProvider)
+            Log.d("CameraViewModel", "Set surface provider for external display's PreviewView.")
         }
     }
 
     private fun dismissExternalPresentation() {
         externalDisplayPresentation?.dismiss()
+        previewUseCase?.setSurfaceProvider(null) // Null out the surface provider
+        Log.d("CameraViewModel", "External presentation dismissed, old surface provider nulled. CameraScreen will drive refresh.")
         externalDisplayPresentation = null
-        // If an external display was disconnected, and preview was on it,
-        // we might need to re-attach preview to the main app's PreviewView.
-        currentLifecycleOwner?.let { bindCameraUseCases(it) } // Rebind to ensure preview is on main screen if needed
+        // DO NOT REBIND HERE - CameraScreen's DisposableEffect will handle it if isExternalDisplayConnected changes
     }
 
     override fun onCleared() {

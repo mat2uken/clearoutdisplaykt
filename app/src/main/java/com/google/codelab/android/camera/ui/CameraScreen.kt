@@ -49,8 +49,8 @@ fun CameraScreen(
     }
 
     // Lifecycle effect to manage camera binding via ViewModel
-    DisposableEffect(selectedLensFacing, lifecycleOwner) { // Re-run if lens or lifecycle owner changes
-        Log.d("CameraScreen", "DisposableEffect triggered for lens: $selectedLensFacing")
+    DisposableEffect(selectedLensFacing, lifecycleOwner, isExternalDisplayConnected) { // Re-run if lens, lifecycle owner or external display status changes
+        Log.d("CameraScreen", "DisposableEffect triggered. Lens: $selectedLensFacing, ExternalDisplay: $isExternalDisplayConnected, Lifecycle: $lifecycleOwner")
         val previewUseCase = Preview.Builder()
             .setTargetAspectRatio(AspectRatio.RATIO_16_9)
             .build()
@@ -61,7 +61,7 @@ fun CameraScreen(
         viewModel.attachLifecycleOwner(lifecycleOwner)
 
         onDispose {
-            Log.d("CameraScreen", "DisposableEffect onDispose")
+            Log.d("CameraScreen", "DisposableEffect onDispose. Lens: $selectedLensFacing, ExternalDisplay: $isExternalDisplayConnected")
             viewModel.detachLifecycleOwner()
         }
     }
