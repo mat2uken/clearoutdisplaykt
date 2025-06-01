@@ -97,12 +97,13 @@ fun HandleCameraPermission() {
 fun CameraScreen() {
     val context = LocalContext.current // Activity context
     val lifecycleOwner = LocalLifecycleOwner.current
+    val savedStateRegistryOwner = LocalSavedStateRegistryOwner.current
 
     val appApplicationContext = context.applicationContext
     val cameraXService = remember { CameraXServiceImpl(appApplicationContext) }
     val displayService = remember { AndroidDisplayService(appApplicationContext) }
-    val cameraViewModelFactory = remember(cameraXService, displayService) {
-        CameraViewModelFactory(cameraXService, displayService)
+    val cameraViewModelFactory = remember(cameraXService, displayService, savedStateRegistryOwner) {
+        CameraViewModelFactory(savedStateRegistryOwner, null, cameraXService, displayService)
     }
     val viewModel: CameraViewModel = viewModel(factory = cameraViewModelFactory)
 
