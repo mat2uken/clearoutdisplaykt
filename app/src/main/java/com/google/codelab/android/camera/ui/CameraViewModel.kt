@@ -63,6 +63,7 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
     private val _toastMessage = MutableStateFlow<String?>(null)
     val toastMessage: StateFlow<String?> = _toastMessage.asStateFlow()
 
+    private lateinit var displayListener: DisplayManager.DisplayListener
 
     init {
         viewModelScope.launch {
@@ -71,6 +72,19 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
                 // We now need LifecycleOwner to bind, so initial bind might be deferred
                 // to when attachLifecycleOwner is called.
             }, mainExecutor)
+        }
+        displayListener = object : DisplayManager.DisplayListener {
+            override fun onDisplayAdded(displayId: Int) {
+                checkForExternalDisplays()
+                _toastMessage.value = "External display connected"
+            }
+            override fun onDisplayRemoved(displayId: Int) {
+                checkForExternalDisplays()
+                _toastMessage.value = "External display disconnected"
+            }
+            override fun onDisplayChanged(displayId: Int) {
+                checkForExternalDisplays()
+            }
         }
         registerDisplayListener()
         checkForExternalDisplays() // Initial check
@@ -190,19 +204,6 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     // --- External Display Handling ---
-    private val displayListener = object : DisplayManager.DisplayListener {
-        override fun onDisplayAdded(displayId: Int) {
-            checkForExternalDisplays()
-            _toastMessage.value = "External display connected"
-        }
-        override fun onDisplayRemoved(displayId: Int) {
-            checkForExternalDisplays()
-            _toastMessage.value = "External display disconnected"
-        }
-        override fun onDisplayChanged(displayId: Int) {
-            checkForExternalDisplays()
-        }
-    }
 
     private fun registerDisplayListener() {
         displayManager.registerDisplayListener(displayListener, Handler(Looper.getMainLooper()))
