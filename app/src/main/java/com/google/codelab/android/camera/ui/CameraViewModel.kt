@@ -12,6 +12,8 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.compose.runtime.mutableStateOf
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
+import android.os.Handler
+import android.os.Looper
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.viewModelScope
 import com.google.codelab.android.camera.ExternalDisplayPresentation
@@ -203,7 +205,7 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private fun registerDisplayListener() {
-        displayManager.registerDisplayListener(displayListener, mainExecutor)
+        displayManager.registerDisplayListener(displayListener, Handler(Looper.getMainLooper()))
     }
 
     private fun unregisterDisplayListener() {
