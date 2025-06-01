@@ -5,12 +5,12 @@ plugins {
 
 android {
     namespace = "com.google.codelab.android.camera"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.google.codelab.android.camera"
         minSdk = 24
-        targetSdk = 34
+        targetSdk = 32
         versionCode = 1
         versionName = "1.0"
 
