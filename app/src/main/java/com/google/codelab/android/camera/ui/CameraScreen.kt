@@ -1,0 +1,139 @@
+package com.google.codelab.android.camera.ui
+
+import android.util.Log
+import android.widget.Toast
+import androidx.camera.core.AspectRatio
+import androidx.camera.core.Preview
+import androidx.camera.view.PreviewView
+import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Cameraswitch
+import androidx.compose.material.icons.filled.Tv // Using Tv icon for external display
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.viewmodel.compose.viewModel
+
+@Composable
+fun CameraScreen(
+    viewModel: CameraViewModel = viewModel()
+) {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    // Observe states from ViewModel
+    val selectedLensFacing by viewModel.selectedLensFacing.collectAsState()
+    val availableLenses by viewModel.availableLenses.collectAsState()
+    // val zoomRatio by viewModel.zoomRatio.collectAsState() // Current actual zoom ratio - UNUSED for now
+    val linearZoom by viewModel.linearZoom.collectAsState() // Slider position (0f-1f)
+    val minZoom by viewModel.minZoomRatio.collectAsState()
+    val maxZoom by viewModel.maxZoomRatio.collectAsState()
+    val isExternalDisplayConnected by viewModel.isExternalDisplayConnected.collectAsState()
+    val toastMessage by viewModel.toastMessage.collectAsState()
+
+    // For PreviewView
+    val previewView = remember { PreviewView(context) }
+
+    // Toast message handling
+    LaunchedEffect(toastMessage) {
+        toastMessage?.let {
+            Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
+            viewModel.clearToastMessage()
+            Log.d("CameraScreen", "Toast: $it") // Added log
+        }
+    }
+
+    // Lifecycle effect to manage camera binding via ViewModel
+    DisposableEffect(selectedLensFacing, lifecycleOwner) { // Re-run if lens or lifecycle owner changes
+        Log.d("CameraScreen", "DisposableEffect triggered for lens: $selectedLensFacing")
+        val previewUseCase = Preview.Builder()
+            .setTargetAspectRatio(AspectRatio.RATIO_16_9)
+            .build()
+            .also {
+                it.setSurfaceProvider(previewView.surfaceProvider)
+            }
+        viewModel.setPreviewUseCase(previewUseCase)
+        viewModel.attachLifecycleOwner(lifecycleOwner)
+
+        onDispose {
+            Log.d("CameraScreen", "DisposableEffect onDispose")
+            viewModel.detachLifecycleOwner()
+        }
+    }
+
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        AndroidView(
+            factory = { previewView },
+            modifier = Modifier.fillMaxSize(),
+            update = { view ->
+                view.scaleType = PreviewView.ScaleType.FILL_CENTER
+                Log.d("CameraScreen", "AndroidView updated, PreviewView scaleType set.")
+            }
+        )
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.Bottom,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            // Zoom Slider
+            if (minZoom < maxZoom) { // Show slider only if zoom is supported
+                Slider(
+                    value = linearZoom,
+                    onValueChange = { viewModel.setLinearZoom(it) },
+                    valueRange = 0f..1f,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                // Text(text = "Zoom: ${"%.2f".format(zoomRatio)}x", style = MaterialTheme.typography.bodySmall) // zoomRatio from VM is actual
+                 Text(text = "Zoom: ${"%.2f".format(minZoom + (maxZoom - minZoom) * linearZoom)}x", style = MaterialTheme.typography.bodySmall)
+
+
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Controls Row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceAround,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Camera Switch Button
+                if (availableLenses.size > 1) {
+                    IconButton(onClick = {
+                        Log.d("CameraScreen", "Switch camera button clicked")
+                        viewModel.switchCamera()
+                    }) {
+                        Icon(
+                            imageVector = Icons.Filled.Cameraswitch,
+                            contentDescription = "Switch Camera",
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                } else {
+                    Spacer(modifier = Modifier.weight(1f)) // Keep spacing if no switch
+                }
+
+                // External Display Indicator
+                if (isExternalDisplayConnected) {
+                    Icon(
+                        imageVector = Icons.Filled.Tv,
+                        contentDescription = "External Display Connected",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                } else {
+                    // Occupy space if not connected to maintain layout balance
+                    Spacer(modifier = Modifier.weight(1f))
+                }
+            }
+        }
+    }
+}
