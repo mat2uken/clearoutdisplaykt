@@ -73,17 +73,26 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
-    androidTestImplementation(platform("androidx.compose:compose-bom:2023.10.01"))
-    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    androidTestImplementation(platform("androidx.compose:compose-bom:2023.10.01")) // Ensure this matches project's BOM
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4") // For Compose UI tests
     debugImplementation("androidx.compose.ui:ui-tooling")
-    debugImplementation("androidx.compose.ui:ui-test-manifest")
+    debugImplementation("androidx.compose.ui:ui-test-manifest") // For Compose UI tests in debug
 
-    // Testing dependencies
+    // AndroidX Test core & rules (already present, confirm versions)
+    // androidTestImplementation("androidx.test:runner:1.5.2") // Already present
+    // androidTestImplementation("androidx.test:rules:1.5.0") // If needed for specific rules
+    // androidTestImplementation("androidx.test.ext:junit:1.1.5") // Already present
+    // androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1") // Already present
+
+    // Testing dependencies (Unit tests)
     testImplementation("junit:junit:4.13.2")
     testImplementation("app.cash.turbine:turbine:1.0.0")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
-    testImplementation("io.mockk:mockk:1.13.8") // For future mocking needs
-    testImplementation("com.google.truth:truth:1.1.5") // For Truth assertions
-    testImplementation("com.google.guava:guava:32.1.3-android") // For Futures.immediateFuture
+    testImplementation("io.mockk:mockk:1.13.8")
+    testImplementation("com.google.truth:truth:1.1.5")
+    testImplementation("com.google.guava:guava:32.1.3-android")
+
+    // MockK for Android Instrumented Tests (needed for fakes using mockk())
+    androidTestImplementation("io.mockk:mockk-android:1.13.8")
 
 }

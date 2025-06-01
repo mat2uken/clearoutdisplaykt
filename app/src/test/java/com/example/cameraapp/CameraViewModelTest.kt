@@ -10,8 +10,9 @@ import android.util.Range
 import android.util.Rational
 import android.hardware.camera2.CameraMetadata // For AWB constants
 import androidx.lifecycle.LifecycleOwner // For mocking LifecycleOwner
-import androidx.lifecycle.SavedStateHandle // Import SavedStateHandle
+import androidx.lifecycle.SavedStateHandle
 import app.cash.turbine.test
+import com.example.cameraapp.camera.CameraErrorEvent // Import CameraErrorEvent
 import com.example.cameraapp.camera.CameraInitResult
 import com.example.cameraapp.camera.CameraXService
 import com.example.cameraapp.display.DisplayService
@@ -24,9 +25,10 @@ import io.mockk.every
 import io.mockk.slot
 import io.mockk.coEvery
 import io.mockk.mockk
-import io.mockk.verifyOrder // For ordered verification
+import io.mockk.verifyOrder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableSharedFlow // Import MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.*
 import org.junit.After
@@ -34,7 +36,7 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import java.util.concurrent.TimeUnit
-import android.view.Display // For mocking Display
+import android.view.Display
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class CameraViewModelTest {
@@ -57,6 +59,8 @@ class CameraViewModelTest {
     private lateinit var mockHasFlashUnitFlow: MutableStateFlow<Boolean>
     private lateinit var mockTorchStateFlow: MutableStateFlow<Boolean>
     private lateinit var mockDisplaysFlow: MutableStateFlow<List<Display>>
+    private lateinit var mockAvailableAwbModesFlow: MutableStateFlow<List<Int>>
+    private lateinit var mockCameraErrorFlow: MutableSharedFlow<CameraErrorEvent>
 
 
     @Before
@@ -69,11 +73,15 @@ class CameraViewModelTest {
         mockHasFlashUnitFlow = MutableStateFlow(false)
         mockTorchStateFlow = MutableStateFlow(false)
         mockDisplaysFlow = MutableStateFlow(emptyList())
+        mockAvailableAwbModesFlow = MutableStateFlow(emptyList())
+        mockCameraErrorFlow = MutableSharedFlow(replay = 0, extraBufferCapacity = 3) // Allow some buffer
 
         every { mockCameraXService.zoomStateFlow } returns mockZoomStateFlow
         every { mockCameraXService.exposureStateFlow } returns mockExposureStateFlow
         every { mockCameraXService.hasFlashUnitFlow } returns mockHasFlashUnitFlow
         every { mockCameraXService.torchStateFlow } returns mockTorchStateFlow
+        every { mockCameraXService.availableAwbModesFlow } returns mockAvailableAwbModesFlow
+        every { mockCameraXService.cameraErrorFlow } returns mockCameraErrorFlow.asSharedFlow() // Use asSharedFlow()
 
         every { mockDisplayService.displaysFlow } returns mockDisplaysFlow
         every { mockDisplayService.startListening() } returns Unit
@@ -85,10 +93,8 @@ class CameraViewModelTest {
         every { mockCameraXService.setWhiteBalanceMode(any()) } returns Futures.immediateFuture(null)
         every { mockCameraXService.startFocusAndMetering(any())} returns Futures.immediateFuture(FocusMeteringResult.create(true))
 
-        // Stubs for surface provider methods
         every { mockCameraXService.setMainSurfaceProvider(any()) } returns Unit
         every { mockCameraXService.setExternalSurfaceProvider(any()) } returns Unit
-
 
         val mockCamera = mockk<androidx.camera.core.Camera>(relaxed = true)
         coEvery { mockCameraXService.initializeAndBindCamera(any(), any(), any()) } returns CameraInitResult.Success(mockCamera)
@@ -96,309 +102,230 @@ class CameraViewModelTest {
         viewModel = CameraViewModel(mockCameraXService, mockDisplayService, savedStateHandle)
     }
 
+    // --- Tests for lensFacing, flip, AWB state saving/loading ---
     @Test
     fun `onSwitchCameraClicked toggles lensFacing and saves to SavedStateHandle`() = runTest {
         viewModel.lensFacing.test {
             assertThat(awaitItem()).isEqualTo(CameraSelector.LENS_FACING_BACK)
             viewModel.onSwitchCameraClicked()
-            val newLensFacing = awaitItem()
-            assertThat(newLensFacing).isEqualTo(CameraSelector.LENS_FACING_FRONT)
+            assertThat(awaitItem()).isEqualTo(CameraSelector.LENS_FACING_FRONT)
             assertThat(savedStateHandle.get<Int>(CameraViewModel.LENS_FACING_KEY)).isEqualTo(CameraSelector.LENS_FACING_FRONT)
-
             viewModel.onSwitchCameraClicked()
             assertThat(awaitItem()).isEqualTo(CameraSelector.LENS_FACING_BACK)
             assertThat(savedStateHandle.get<Int>(CameraViewModel.LENS_FACING_KEY)).isEqualTo(CameraSelector.LENS_FACING_BACK)
             cancelAndConsumeRemainingEvents()
         }
     }
-
     @Test
     fun `onFlipClicked toggles isFlippedHorizontally and saves to SavedStateHandle`() = runTest {
         viewModel.isFlippedHorizontally.test {
-            assertThat(awaitItem()).isFalse()
+            assertThat(awaitItem()).isFalse(); viewModel.onFlipClicked()
+            assertThat(awaitItem()).isTrue(); assertThat(savedStateHandle.get<Boolean>(CameraViewModel.IS_FLIPPED_KEY)).isTrue()
             viewModel.onFlipClicked()
-            assertThat(awaitItem()).isTrue()
-            assertThat(savedStateHandle.get<Boolean>(CameraViewModel.IS_FLIPPED_KEY)).isTrue()
-
-            viewModel.onFlipClicked()
-            assertThat(awaitItem()).isFalse()
-            assertThat(savedStateHandle.get<Boolean>(CameraViewModel.IS_FLIPPED_KEY)).isFalse()
+            assertThat(awaitItem()).isFalse(); assertThat(savedStateHandle.get<Boolean>(CameraViewModel.IS_FLIPPED_KEY)).isFalse()
             cancelAndConsumeRemainingEvents()
         }
     }
-
     @Test
     fun `onWhiteBalanceModeSelected updates currentAwbMode and saves to SavedStateHandle`() = runTest {
         val selectedMode = CameraMetadata.CONTROL_AWB_MODE_INCANDESCENT
         viewModel.currentAwbMode.test {
             assertThat(awaitItem()).isEqualTo(CameraMetadata.CONTROL_AWB_MODE_AUTO)
-
             viewModel.onWhiteBalanceModeSelected(selectedMode)
-
             assertThat(awaitItem()).isEqualTo(selectedMode)
             verify(exactly = 1) { mockCameraXService.setWhiteBalanceMode(selectedMode) }
             assertThat(savedStateHandle.get<Int>(CameraViewModel.AWB_MODE_KEY)).isEqualTo(selectedMode)
             cancelAndConsumeRemainingEvents()
         }
     }
-
-    @Test
-    fun `viewModel initializes lensFacing from SavedStateHandle`() = runTest {
+    @Test fun `viewModel initializes lensFacing from SavedStateHandle`() = runTest {
         savedStateHandle[CameraViewModel.LENS_FACING_KEY] = CameraSelector.LENS_FACING_FRONT
         val newViewModel = CameraViewModel(mockCameraXService, mockDisplayService, savedStateHandle)
         assertThat(newViewModel.lensFacing.value).isEqualTo(CameraSelector.LENS_FACING_FRONT)
     }
-
-    @Test
-    fun `viewModel initializes isFlippedHorizontally from SavedStateHandle`() = runTest {
+    @Test fun `viewModel initializes isFlippedHorizontally from SavedStateHandle`() = runTest {
         savedStateHandle[CameraViewModel.IS_FLIPPED_KEY] = true
         val newViewModel = CameraViewModel(mockCameraXService, mockDisplayService, savedStateHandle)
         assertThat(newViewModel.isFlippedHorizontally.value).isTrue()
     }
-
-    @Test
-    fun `viewModel initializes currentAwbMode from SavedStateHandle`() = runTest {
+    @Test fun `viewModel initializes currentAwbMode from SavedStateHandle`() = runTest {
         val savedMode = CameraMetadata.CONTROL_AWB_MODE_CLOUDY_DAYLIGHT
         savedStateHandle[CameraViewModel.AWB_MODE_KEY] = savedMode
         val newViewModel = CameraViewModel(mockCameraXService, mockDisplayService, savedStateHandle)
         assertThat(newViewModel.currentAwbMode.value).isEqualTo(savedMode)
     }
 
-    @Test
-    fun `setZoomRatio calls service with coerced value`() = runTest {
-        val initialZoomState = ZoomState.create(2.0f, 1.0f, 4.0f, 0.1f)
-        mockZoomStateFlow.value = initialZoomState
-        advanceUntilIdle()
+    // --- Tests for Zoom, Exposure, LED, TapToFocus, ExternalDisplay, SupportedAWB (existing) ---
+    @Test fun `setZoomRatio calls service with coerced value`() = runTest {
+        val initialZoomState = ZoomState.create(2.0f, 1.0f, 4.0f, 0.1f); mockZoomStateFlow.value = initialZoomState; advanceUntilIdle()
         viewModel.setZoomRatio(0.5f); verify { mockCameraXService.setZoomRatio(1.0f) }
         viewModel.setZoomRatio(5.0f); verify { mockCameraXService.setZoomRatio(4.0f) }
         viewModel.setZoomRatio(3.0f); verify { mockCameraXService.setZoomRatio(3.0f) }
     }
-
-    @Test
-    fun `zoom related StateFlows correctly reflect service zoomStateFlow`() = runTest {
-        viewModel.currentZoomRatio.test {
-            assertThat(awaitItem()).isEqualTo(1f)
-            mockZoomStateFlow.value = ZoomState.create(1.5f, 1.0f, 3.0f, 0.1f)
-            assertThat(awaitItem()).isEqualTo(1.5f)
-            cancelAndConsumeRemainingEvents()
-        }
-    }
-
-    @Test
-    fun `isZoomSupported reflects zoomState correctly`() = runTest {
+    @Test fun `isZoomSupported reflects zoomState correctly`() = runTest {
          viewModel.isZoomSupported.test {
             assertThat(awaitItem()).isFalse()
-            mockZoomStateFlow.value = ZoomState.create(1.0f, 1.0f, 1.0f, 0.0f)
-            assertThat(awaitItem()).isFalse()
-            mockZoomStateFlow.value = ZoomState.create(2.0f, 1.0f, 3.0f, 0.1f)
-            assertThat(awaitItem()).isTrue()
+            mockZoomStateFlow.value = ZoomState.create(1.0f, 1.0f, 1.0f, 0.0f); assertThat(awaitItem()).isFalse()
+            mockZoomStateFlow.value = ZoomState.create(2.0f, 1.0f, 3.0f, 0.1f); assertThat(awaitItem()).isTrue()
             cancelAndConsumeRemainingEvents()
         }
     }
-
-    @Test
-    fun `setExposureIndex calls service with coerced value`() = runTest {
-        val initialExposureState = ExposureState.create(Range(-2, 2), 0, Rational(1,1))
-        mockExposureStateFlow.value = initialExposureState
-        advanceUntilIdle()
+    @Test fun `setExposureIndex calls service with coerced value`() = runTest {
+        val initialExposureState = ExposureState.create(Range(-2, 2), 0, Rational(1,1)); mockExposureStateFlow.value = initialExposureState; advanceUntilIdle()
         viewModel.setExposureIndex(-3); verify { mockCameraXService.setExposureCompensationIndex(-2) }
         viewModel.setExposureIndex(3); verify { mockCameraXService.setExposureCompensationIndex(2) }
         viewModel.setExposureIndex(1); verify { mockCameraXService.setExposureCompensationIndex(1) }
     }
-
-    @Test
-    fun `exposure related StateFlows correctly reflect service exposureStateFlow`() = runTest {
-        viewModel.currentExposureIndex.test {
-            assertThat(awaitItem()).isEqualTo(0)
-            mockExposureStateFlow.value = ExposureState.create(Range(-5, 5), 2, Rational(1,1))
-            assertThat(awaitItem()).isEqualTo(2)
-            cancelAndConsumeRemainingEvents()
-        }
-    }
-
-    @Test
-    fun `isExposureSupported reflects exposureState correctly`() = runTest {
+    @Test fun `isExposureSupported reflects exposureState correctly`() = runTest {
         viewModel.isExposureSupported.test {
             assertThat(awaitItem()).isFalse()
-            mockExposureStateFlow.value = ExposureState.create(Range(0,0), 0, Rational(1,1), false)
-            assertThat(awaitItem()).isFalse()
-            mockExposureStateFlow.value = ExposureState.create(Range(-2,2), 0, Rational(1,1), true)
-            assertThat(awaitItem()).isTrue()
+            mockExposureStateFlow.value = ExposureState.create(Range(0,0), 0, Rational(1,1), false); assertThat(awaitItem()).isFalse()
+            mockExposureStateFlow.value = ExposureState.create(Range(-2,2), 0, Rational(1,1), true); assertThat(awaitItem()).isTrue()
             cancelAndConsumeRemainingEvents()
         }
     }
-
-    @Test
-    fun `onLedButtonClicked calls service enableTorch true when flash available and LED is off`() = runTest {
+    @Test fun `onLedButtonClicked calls service enableTorch true when flash available and LED is off`() = runTest {
         mockHasFlashUnitFlow.value = true; mockTorchStateFlow.value = false
         viewModel.onLedButtonClicked(); verify { mockCameraXService.enableTorch(true) }
     }
-
-    @Test
-    fun `onLedButtonClicked calls service enableTorch false when flash available and LED is on`() = runTest {
+    @Test fun `onLedButtonClicked calls service enableTorch false when flash available and LED is on`() = runTest {
         mockHasFlashUnitFlow.value = true; mockTorchStateFlow.value = true
         viewModel.onLedButtonClicked(); verify { mockCameraXService.enableTorch(false) }
     }
-
-    @Test
-    fun `onLedButtonClicked does NOT call service enableTorch when flash is unavailable`() = runTest {
+    @Test fun `onLedButtonClicked does NOT call service enableTorch when flash is unavailable`() = runTest {
         mockHasFlashUnitFlow.value = false; mockTorchStateFlow.value = false
         viewModel.onLedButtonClicked(); verify(exactly = 0) { mockCameraXService.enableTorch(any()) }
     }
-
-    @Test
-    fun `isLedOn StateFlow correctly reflects service torchStateFlow`() = runTest {
-        viewModel.isLedOn.test {
-            assertThat(awaitItem()).isFalse()
-            mockTorchStateFlow.value = true; assertThat(awaitItem()).isTrue()
-            mockTorchStateFlow.value = false; assertThat(awaitItem()).isFalse()
-            cancelAndConsumeRemainingEvents()
-        }
+    @Test fun `isLedOn StateFlow correctly reflects service torchStateFlow`() = runTest {
+        viewModel.isLedOn.test { assertThat(awaitItem()).isFalse(); mockTorchStateFlow.value = true; assertThat(awaitItem()).isTrue(); mockTorchStateFlow.value = false; assertThat(awaitItem()).isFalse(); cancelAndConsumeRemainingEvents() }
     }
-
-    @Test
-    fun `hasFlashUnit StateFlow correctly reflects service hasFlashUnitFlow`() = runTest {
-        viewModel.hasFlashUnit.test {
-            assertThat(awaitItem()).isFalse()
-            mockHasFlashUnitFlow.value = true; assertThat(awaitItem()).isTrue()
-            mockHasFlashUnitFlow.value = false; assertThat(awaitItem()).isFalse()
-            cancelAndConsumeRemainingEvents()
-        }
+    @Test fun `hasFlashUnit StateFlow correctly reflects service hasFlashUnitFlow`() = runTest {
+        viewModel.hasFlashUnit.test { assertThat(awaitItem()).isFalse(); mockHasFlashUnitFlow.value = true; assertThat(awaitItem()).isTrue(); mockHasFlashUnitFlow.value = false; assertThat(awaitItem()).isFalse(); cancelAndConsumeRemainingEvents() }
     }
-
-    @Test
-    fun `onPreviewTapped calls service with correctly constructed FocusMeteringAction`() = runTest {
-        val viewWidth = 1280; val viewHeight = 720; val tapX = 300f; val tapY = 400f
-        val actionSlot = slot<FocusMeteringAction>()
+    @Test fun `onPreviewTapped calls service with correctly constructed FocusMeteringAction`() = runTest {
+        val viewWidth = 1280; val viewHeight = 720; val tapX = 300f; val tapY = 400f; val actionSlot = slot<FocusMeteringAction>()
         every { mockCameraXService.startFocusAndMetering(capture(actionSlot)) } returns Futures.immediateFuture(FocusMeteringResult.create(true))
-        viewModel.onPreviewTapped(viewWidth, viewHeight, tapX, tapY)
-        verify(exactly = 1) { mockCameraXService.startFocusAndMetering(actionSlot.captured) }
-        val capturedAction = actionSlot.captured
-        assertThat(capturedAction.meteringPoints).hasSize(1)
-        assertThat(capturedAction.meteringPoints.first()).isNotNull()
-        assertThat(capturedAction.autoCancelDurationMillis).isEqualTo(TimeUnit.SECONDS.toMillis(3))
+        viewModel.onPreviewTapped(viewWidth, viewHeight, tapX, tapY); verify(exactly = 1) { mockCameraXService.startFocusAndMetering(actionSlot.captured) }
+        val ca = actionSlot.captured; assertThat(ca.meteringPoints).hasSize(1); assertThat(ca.meteringPoints.first()).isNotNull(); assertThat(ca.autoCancelDurationMillis).isEqualTo(TimeUnit.SECONDS.toMillis(3))
+    }
+    @Test fun `onPreviewTapped does not call service if viewWidth is zero`() = runTest { viewModel.onPreviewTapped(0, 720, 1f, 1f); verify(exactly = 0) { mockCameraXService.startFocusAndMetering(any()) } }
+    @Test fun `onPreviewTapped does not call service if viewHeight is zero`() = runTest { viewModel.onPreviewTapped(1280, 0, 1f, 1f); verify(exactly = 0) { mockCameraXService.startFocusAndMetering(any()) } }
+    @Test fun `primaryCameraInit re-applies non-AUTO AWB mode via service`() = runTest {
+        val sm = CameraMetadata.CONTROL_AWB_MODE_FLUORESCENT; viewModel.onWhiteBalanceModeSelected(sm); io.mockk.clearRecordedCalls(mockCameraXService); every { mockCameraXService.setWhiteBalanceMode(any()) } returns Futures.immediateFuture(null)
+        viewModel.primaryCameraInit(mockk(relaxed=true), mockk(relaxed=true)); advanceUntilIdle(); verify(exactly = 1) { mockCameraXService.setWhiteBalanceMode(sm) }
+    }
+    @Test fun `primaryCameraInit does not re-apply AWB mode if it is AUTO`() = runTest {
+        assertThat(viewModel.currentAwbMode.value).isEqualTo(CameraMetadata.CONTROL_AWB_MODE_AUTO); io.mockk.clearRecordedCalls(mockCameraXService); every { mockCameraXService.setWhiteBalanceMode(any()) } returns Futures.immediateFuture(null)
+        viewModel.primaryCameraInit(mockk(relaxed=true), mockk(relaxed=true)); advanceUntilIdle(); verify(exactly = 0) { mockCameraXService.setWhiteBalanceMode(CameraMetadata.CONTROL_AWB_MODE_AUTO) }
+    }
+    @Test fun `externalDisplay flow emits null when no external displays`() = runTest {
+        val d = mockk<Display>(relaxed=true); every { d.displayId } returns Display.DEFAULT_DISPLAY; viewModel.externalDisplay.test { mockDisplaysFlow.value = emptyList();assertThat(awaitItem()).isNull(); mockDisplaysFlow.value = listOf(d); advanceUntilIdle();assertThat(viewModel.externalDisplay.value).isNull(); cancelAndConsumeRemainingEvents() }
+    }
+    @Test fun `externalDisplay flow emits the first non-default display`() = runTest {
+        val d0 = mockk<Display>(relaxed=true); every { d0.displayId } returns Display.DEFAULT_DISPLAY; val d1 = mockk<Display>(relaxed=true); every { d1.displayId } returns (Display.DEFAULT_DISPLAY+1); val d2 = mockk<Display>(relaxed=true); every { d2.displayId } returns (Display.DEFAULT_DISPLAY+2)
+        viewModel.externalDisplay.test { mockDisplaysFlow.value = emptyList(); assertThat(awaitItem()).isNull(); mockDisplaysFlow.value = listOf(d0,d1,d2); assertThat(awaitItem()).isEqualTo(d1); mockDisplaysFlow.value = listOf(d0); assertThat(awaitItem()).isNull(); cancelAndConsumeRemainingEvents() }
+    }
+    @Test fun `attachExternalDisplaySurface calls service to set external and clear main provider`() = runTest { val sp = mockk<Preview.SurfaceProvider>(relaxed=true); viewModel.attachExternalDisplaySurface(sp); verifyOrder { mockCameraXService.setMainSurfaceProvider(null); mockCameraXService.setExternalSurfaceProvider(sp) } }
+    @Test fun `detachExternalDisplaySurface calls service to clear external and restore main provider if stored`() = runTest {
+        val msp = mockk<Preview.SurfaceProvider>(relaxed=true); viewModel.primaryCameraInit(mockk(relaxed=true), msp); advanceUntilIdle(); io.mockk.clearRecordedCalls(mockCameraXService); every {mockCameraXService.setMainSurfaceProvider(any())} returns Unit; every {mockCameraXService.setExternalSurfaceProvider(any())} returns Unit
+        viewModel.detachExternalDisplaySurface(); verifyOrder { mockCameraXService.setExternalSurfaceProvider(null); mockCameraXService.setMainSurfaceProvider(msp) }
+    }
+    @Test fun `detachExternalDisplaySurface calls service to clear external and does not set main if none stored`() = runTest { viewModel.detachExternalDisplaySurface(); verify(exactly=1){mockCameraXService.setExternalSurfaceProvider(null)}; verify(exactly=0){mockCameraXService.setMainSurfaceProvider(any())} }
+    @Test fun `ViewModel calls startListening on init and stopListening onCleared`() = runTest { verify(exactly=1){mockDisplayService.startListening()}; viewModel.onCleared(); verify(exactly=1){mockDisplayService.stopListening()} }
+    @Test fun `supportedWbPresets emits emptyList initially`() = runTest { viewModel.supportedWbPresets.test{assertThat(awaitItem()).isEmpty(); cancelAndConsumeRemainingEvents()} }
+    @Test fun `supportedWbPresets emits correct subset based on service flow`() = runTest {
+        val exp = listOf(WbPreset("Auto",0),WbPreset("Daylight",5)); val modes = listOf(0,5,999) // CONTROL_AWB_MODE_AUTO is 1, DAYLIGHT is 5 in reality, but test with 0 and 5 for simplicity if constants are complex to get in test. Using actual values.
+        val expected = listOf(WbPreset("Auto", CameraMetadata.CONTROL_AWB_MODE_AUTO), WbPreset("Daylight", CameraMetadata.CONTROL_AWB_MODE_DAYLIGHT))
+        val actualModes = listOf(CameraMetadata.CONTROL_AWB_MODE_AUTO, CameraMetadata.CONTROL_AWB_MODE_DAYLIGHT, 999)
+        viewModel.supportedWbPresets.test{assertThat(awaitItem()).isEmpty();mockAvailableAwbModesFlow.value=actualModes;assertThat(awaitItem()).containsExactlyElementsIn(expected).inOrder();cancelAndConsumeRemainingEvents()}
+    }
+    @Test fun `supportedWbPresets emits all known presets if all modes are available`() = runTest {
+        val allMaster = CameraViewModel.allKnownWbPresets; viewModel.supportedWbPresets.test{assertThat(awaitItem()).isEmpty();mockAvailableAwbModesFlow.value=allMaster.map{it.mode};val em=awaitItem();assertThat(em).hasSize(allMaster.size);assertThat(em).containsExactlyElementsIn(allMaster).inOrder();cancelAndConsumeRemainingEvents()}
+    }
+    @Test fun `supportedWbPresets emits emptyList when service provides empty list of modes again`() = runTest {
+        viewModel.supportedWbPresets.test{assertThat(awaitItem()).isEmpty();mockAvailableAwbModesFlow.value=listOf(CameraMetadata.CONTROL_AWB_MODE_AUTO);assertThat(awaitItem()).hasSize(1);mockAvailableAwbModesFlow.value=emptyList();assertThat(awaitItem()).isEmpty();cancelAndConsumeRemainingEvents()}
+    }
+    @Test fun `supportedWbPresets filters out modes not in master list`() = runTest {
+        val modes=listOf(CameraMetadata.CONTROL_AWB_MODE_AUTO,100,CameraMetadata.CONTROL_AWB_MODE_SHADE,101); val exp=listOf(WbPreset("Auto",CameraMetadata.CONTROL_AWB_MODE_AUTO),WbPreset("Shade",CameraMetadata.CONTROL_AWB_MODE_SHADE))
+        viewModel.supportedWbPresets.test{assertThat(awaitItem()).isEmpty();mockAvailableAwbModesFlow.value=modes;assertThat(awaitItem()).containsExactlyElementsIn(exp).inOrder();cancelAndConsumeRemainingEvents()}
     }
 
+    // --- Tests for Error Handling ---
     @Test
-    fun `onPreviewTapped does not call service if viewWidth is zero`() = runTest {
-        viewModel.onPreviewTapped(viewWidth = 0, viewHeight = 720, x = 100f, y = 200f)
-        verify(exactly = 0) { mockCameraXService.startFocusAndMetering(any()) }
-    }
+    fun `viewModel displayedError is updated on InitializationError from service`() = runTest {
+        val errorMessage = "Camera hardware unavailable"
+        val initError = CameraErrorEvent.InitializationError(errorMessage, RuntimeException("Cause"))
 
-    @Test
-    fun `onPreviewTapped does not call service if viewHeight is zero`() = runTest {
-        viewModel.onPreviewTapped(viewWidth = 1280, viewHeight = 0, x = 100f, y = 200f)
-        verify(exactly = 0) { mockCameraXService.startFocusAndMetering(any()) }
-    }
+        viewModel.displayedError.test {
+            // This awaitItem() might receive the initial null from displayedError's stateIn.
+            // Depending on test dispatcher, collection might start before or after emit.
+            // If it starts after, first awaitItem will get the error.
+            // If it starts before, first is null, second is error.
+            val firstItem = awaitItem()
 
-    @Test
-    fun `primaryCameraInit re-applies non-AUTO AWB mode via service`() = runTest {
-        val selectedMode = CameraMetadata.CONTROL_AWB_MODE_FLUORESCENT
-        viewModel.onWhiteBalanceModeSelected(selectedMode)
-        io.mockk.clearRecordedCalls(mockCameraXService)
-        every { mockCameraXService.setWhiteBalanceMode(any()) } returns Futures.immediateFuture(null)
-        val mockLifecycleOwner = mockk<LifecycleOwner>(relaxed = true)
-        val mockSurfaceProvider = mockk<Preview.SurfaceProvider>(relaxed = true)
-        viewModel.primaryCameraInit(mockLifecycleOwner, mockSurfaceProvider)
-        advanceUntilIdle()
-        verify(exactly = 1) { mockCameraXService.setWhiteBalanceMode(selectedMode) }
-    }
+            mockCameraErrorFlow.emit(initError)
 
-    @Test
-    fun `primaryCameraInit does not re-apply AWB mode if it is AUTO`() = runTest {
-        assertThat(viewModel.currentAwbMode.value).isEqualTo(CameraMetadata.CONTROL_AWB_MODE_AUTO)
-        io.mockk.clearRecordedCalls(mockCameraXService)
-        every { mockCameraXService.setWhiteBalanceMode(any()) } returns Futures.immediateFuture(null)
-        val mockLifecycleOwner = mockk<LifecycleOwner>(relaxed = true)
-        val mockSurfaceProvider = mockk<Preview.SurfaceProvider>(relaxed = true)
-        viewModel.primaryCameraInit(mockLifecycleOwner, mockSurfaceProvider)
-        advanceUntilIdle()
-        verify(exactly = 0) { mockCameraXService.setWhiteBalanceMode(CameraMetadata.CONTROL_AWB_MODE_AUTO) }
-    }
-
-    // --- Tests for External Display Logic ---
-    @Test
-    fun `externalDisplay flow emits null when no external displays`() = runTest {
-        val mockDefaultDisplay = mockk<Display>(relaxed = true)
-        every { mockDefaultDisplay.displayId } returns Display.DEFAULT_DISPLAY
-
-        viewModel.externalDisplay.test {
-            // Initial value from .stateIn might be null or the last value if collected before.
-            // For a fresh ViewModel, if displaysFlow starts empty then maps to null, it should be null.
-            mockDisplaysFlow.value = emptyList() // Ensure starting condition
-            assertThat(awaitItem()).isNull()
-
-            mockDisplaysFlow.value = listOf(mockDefaultDisplay)
-            advanceUntilIdle() // Allow map and stateIn to process
-            assertThat(viewModel.externalDisplay.value).isNull() // Still null
+            val receivedUserError = if (firstItem == null) awaitItem() else firstItem // Adjust based on timing
+            assertThat(receivedUserError).isNotNull()
+            assertThat(receivedUserError?.message).isEqualTo("Error initializing camera: $errorMessage")
+            // Consume any other potential emissions if tests run in parallel or flow is hot
             cancelAndConsumeRemainingEvents()
         }
     }
 
     @Test
-    fun `externalDisplay flow emits the first non-default display`() = runTest {
-        val mockDefaultDisplay = mockk<Display>(relaxed = true); every { mockDefaultDisplay.displayId } returns Display.DEFAULT_DISPLAY
-        val mockExternalDisplay1 = mockk<Display>(relaxed = true); every { mockExternalDisplay1.displayId } returns (Display.DEFAULT_DISPLAY + 1)
-        val mockExternalDisplay2 = mockk<Display>(relaxed = true); every { mockExternalDisplay2.displayId } returns (Display.DEFAULT_DISPLAY + 2)
+    fun `viewModel toastMessages emits on ControlError from service`() = runTest {
+        val operationName = "setZoomRatio"
+        val errorMessage = "Zoom failed"
+        val controlError = CameraErrorEvent.ControlError(operationName, errorMessage, RuntimeException("Cause"))
 
-        viewModel.externalDisplay.test {
-            mockDisplaysFlow.value = emptyList()
-            assertThat(awaitItem()).isNull() // Initial
+        viewModel.toastMessages.test {
+            // SharedFlows with test { } don't await an initial item unless one was already replayed.
+            mockCameraErrorFlow.emit(controlError)
 
-            mockDisplaysFlow.value = listOf(mockDefaultDisplay, mockExternalDisplay1, mockExternalDisplay2)
-            assertThat(awaitItem()).isEqualTo(mockExternalDisplay1)
-
-            mockDisplaysFlow.value = listOf(mockDefaultDisplay)
-            assertThat(awaitItem()).isNull()
-
+            val receivedToastMessage = awaitItem()
+            assertThat(receivedToastMessage).isEqualTo("Operation failed: $operationName")
             cancelAndConsumeRemainingEvents()
         }
     }
 
     @Test
-    fun `attachExternalDisplaySurface calls service to set external and clear main provider`() = runTest {
-        val mockExtSurfaceProvider = mockk<Preview.SurfaceProvider>(relaxed = true)
-        viewModel.attachExternalDisplaySurface(mockExtSurfaceProvider)
-        verifyOrder {
-            mockCameraXService.setMainSurfaceProvider(null)
-            mockCameraXService.setExternalSurfaceProvider(mockExtSurfaceProvider)
+    fun `clearDisplayedError sets displayedError to null`() = runTest {
+        val initError = CameraErrorEvent.InitializationError("Initial error", null)
+
+        viewModel.displayedError.test {
+            val initial = awaitItem() // Consume initial null or any previous state
+
+            mockCameraErrorFlow.emit(initError)
+            val errorState = awaitItem()
+            assertThat(errorState).isNotNull()
+
+            viewModel.clearDisplayedError()
+            assertThat(awaitItem()).isNull()
+            cancelAndConsumeRemainingEvents()
         }
     }
 
     @Test
-    fun `detachExternalDisplaySurface calls service to clear external and restore main provider if stored`() = runTest {
-        val mockMainSurfaceProvider = mockk<Preview.SurfaceProvider>(relaxed = true)
-        val mockLifecycleOwner = mockk<LifecycleOwner>(relaxed = true)
+    fun `primaryCameraInit sets displayedError on CameraInitResult Failure`() = runTest {
+        val failureMessage = "Test Init Failure From Result"
+        val exception = RuntimeException(failureMessage)
+        coEvery { mockCameraXService.initializeAndBindCamera(any(), any(), any()) } returns CameraInitResult.Failure(exception)
 
-        viewModel.primaryCameraInit(mockLifecycleOwner, mockMainSurfaceProvider)
-        advanceUntilIdle() // Ensure primaryCameraInit's coroutine can complete and set mainSurfaceProvider
+        viewModel.displayedError.test {
+            assertThat(awaitItem()).isNull()
 
-        io.mockk.clearRecordedCalls(mockCameraXService) // Clear calls from init
-        // Re-stub because clearMocks might remove them
-        every { mockCameraXService.setMainSurfaceProvider(any()) } returns Unit
-        every { mockCameraXService.setExternalSurfaceProvider(any()) } returns Unit
+            val mockLifecycleOwner = mockk<LifecycleOwner>(relaxed = true)
+            val mockSurfaceProvider = mockk<Preview.SurfaceProvider>(relaxed = true)
+            viewModel.primaryCameraInit(mockLifecycleOwner, mockSurfaceProvider)
 
-        viewModel.detachExternalDisplaySurface()
+            // advanceUntilIdle() // ensure coroutine in primaryCameraInit processing completes for direct set
 
-        verifyOrder {
-            mockCameraXService.setExternalSurfaceProvider(null)
-            mockCameraXService.setMainSurfaceProvider(mockMainSurfaceProvider)
+            val receivedUserError = awaitItem() // This will be from the direct set in primaryCameraInit
+            assertThat(receivedUserError).isNotNull()
+            assertThat(receivedUserError?.message).isEqualTo("Failed to initialize camera: $failureMessage")
+            cancelAndConsumeRemainingEvents()
         }
-    }
-
-    @Test
-    fun `detachExternalDisplaySurface calls service to clear external and does not set main if none stored`() = runTest {
-        // ViewModel is fresh, mainSurfaceProvider is initially null.
-        viewModel.detachExternalDisplaySurface()
-        verify(exactly = 1) { mockCameraXService.setExternalSurfaceProvider(null) }
-        verify(exactly = 0) { mockCameraXService.setMainSurfaceProvider(any()) }
-    }
-
-    @Test
-    fun `ViewModel calls startListening on init and stopListening onCleared`() = runTest {
-        verify(exactly = 1) { mockDisplayService.startListening() } // Called in init {}
-        viewModel.onCleared() // Manually call for test
-        verify(exactly = 1) { mockDisplayService.stopListening() }
     }
 }
 

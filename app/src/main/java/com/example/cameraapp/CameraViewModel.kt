@@ -12,6 +12,14 @@ import com.example.cameraapp.display.DisplayService
 import android.view.Display
 import androidx.lifecycle.SavedStateHandle
 import android.hardware.camera2.CameraMetadata
+import com.example.cameraapp.camera.CameraErrorEvent // Import CameraErrorEvent
+import com.example.cameraapp.camera.CameraInitResult // Import CameraInitResult
+import kotlinx.coroutines.launch // For viewModelScope.launch
+
+// User-facing error structure
+data class UserError(val id: Long = System.nanoTime(), val message: String)
+
+data class WbPreset(val name: String, val mode: Int)
 
 class CameraViewModel(
     private val cameraXService: CameraXService,
@@ -23,10 +31,42 @@ class CameraViewModel(
         const val LENS_FACING_KEY = "lens_facing"
         const val IS_FLIPPED_KEY = "is_flipped"
         const val AWB_MODE_KEY = "awb_mode"
+
+        private val allKnownWbPresets = listOf(
+            WbPreset("Auto", CameraMetadata.CONTROL_AWB_MODE_AUTO),
+            WbPreset("Incandescent", CameraMetadata.CONTROL_AWB_MODE_INCANDESCENT),
+            WbPreset("Fluorescent", CameraMetadata.CONTROL_AWB_MODE_FLUORESCENT),
+            WbPreset("Warm Fluorescent", CameraMetadata.CONTROL_AWB_MODE_WARM_FLUORESCENT),
+            WbPreset("Daylight", CameraMetadata.CONTROL_AWB_MODE_DAYLIGHT),
+            WbPreset("Cloudy Daylight", CameraMetadata.CONTROL_AWB_MODE_CLOUDY_DAYLIGHT),
+            WbPreset("Twilight", CameraMetadata.CONTROL_AWB_MODE_TWILIGHT),
+            WbPreset("Shade", CameraMetadata.CONTROL_AWB_MODE_SHADE)
+        )
     }
+
+    private val _displayedError = MutableStateFlow<UserError?>(null)
+    val displayedError: StateFlow<UserError?> = _displayedError.asStateFlow()
+
+    private val _toastMessages = MutableSharedFlow<String>(extraBufferCapacity = 3)
+    val toastMessages: SharedFlow<String> = _toastMessages.asSharedFlow()
 
     init {
         displayService.startListening()
+
+        viewModelScope.launch {
+            cameraXService.cameraErrorFlow.collect { event ->
+                when (event) {
+                    is CameraErrorEvent.InitializationError -> {
+                        android.util.Log.e("CameraViewModel", "InitializationError: ${event.message}", event.cause)
+                        _displayedError.value = UserError(message = "Error initializing camera: ${event.message}")
+                    }
+                    is CameraErrorEvent.ControlError -> {
+                        android.util.Log.w("CameraViewModel", "ControlError for ${event.operation}: ${event.message}", event.cause)
+                        _toastMessages.tryEmit("Operation failed: ${event.operation}")
+                    }
+                }
+            }
+        }
     }
 
     private val _lensFacing = MutableStateFlow(
@@ -92,6 +132,21 @@ class CameraViewModel(
     )
     val currentAwbMode: StateFlow<Int> = _currentAwbModeInternal.asStateFlow()
 
+    val supportedWbPresets: StateFlow<List<WbPreset>> = cameraXService.availableAwbModesFlow
+        .map { availableModes ->
+            if (availableModes.isEmpty()) {
+                allKnownWbPresets.filter { preset -> preset.mode == CameraMetadata.CONTROL_AWB_MODE_AUTO }
+            } else {
+                allKnownWbPresets.filter { preset -> preset.mode in availableModes }
+            }
+        }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000L),
+            initialValue = listOf(WbPreset("Auto", CameraMetadata.CONTROL_AWB_MODE_AUTO)) // Default to Auto if service flow is slow
+        )
+
+
     val externalDisplay: StateFlow<Display?> = displayService.displaysFlow
         .map { displays ->
             displays.firstOrNull { it.displayId != Display.DEFAULT_DISPLAY }
@@ -148,11 +203,20 @@ class CameraViewModel(
         this.mainSurfaceProvider = mainSurfaceProvider
         viewModelScope.launch {
             android.util.Log.d("CameraViewModel", "primaryCameraInit called with lens: ${lensFacing.value}")
-            cameraXService.initializeAndBindCamera(lifecycleOwner, mainSurfaceProvider, lensFacing.value)
+            // cameraXService.setMainSurfaceProvider(mainSurfaceProvider) // Service's init should use the passed provider
+            val result = cameraXService.initializeAndBindCamera(lifecycleOwner, mainSurfaceProvider, lensFacing.value)
 
-            if (_currentAwbModeInternal.value != CameraMetadata.CONTROL_AWB_MODE_AUTO) {
-                 android.util.Log.d("CameraViewModel", "Re-applying AWB mode after init: ${_currentAwbModeInternal.value}")
-                cameraXService.setWhiteBalanceMode(_currentAwbModeInternal.value)
+            if (result is CameraInitResult.Failure) {
+                android.util.Log.e("CameraViewModel", "CameraInitResult.Failure: ${result.exception.message}", result.exception)
+                // _displayedError is already handled by the cameraErrorFlow collector for InitializationError
+                // but direct result handling gives immediate feedback if desired.
+                // _displayedError.value = UserError(message = "Failed to initialize camera: ${result.exception.localizedMessage ?: "Unknown error"}")
+            } else if (result is CameraInitResult.Success) {
+                val persistedAwbMode = _currentAwbModeInternal.value
+                if (persistedAwbMode != CameraMetadata.CONTROL_AWB_MODE_AUTO) {
+                     android.util.Log.d("CameraViewModel", "Re-applying AWB mode after init: $persistedAwbMode")
+                    cameraXService.setWhiteBalanceMode(persistedAwbMode)
+                }
             }
         }
     }
@@ -186,6 +250,10 @@ class CameraViewModel(
 
         android.util.Log.d("CameraViewModel", "Requesting focus/metering at point: $meteringPoint (x=$x, y=$y, viewW=$viewWidth, viewH=$viewH=$viewHeight)")
         cameraXService.startFocusAndMetering(action)
+    }
+
+    fun clearDisplayedError() {
+        _displayedError.value = null
     }
 
     override fun onCleared() {

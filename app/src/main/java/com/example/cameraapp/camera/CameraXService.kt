@@ -48,6 +48,19 @@ interface CameraXService {
      */
     val torchStateFlow: StateFlow<Boolean>
 
+    /**
+     * Observable list of available AWB (Auto White Balance) modes supported by the current camera.
+     * Emits a list of CameraMetadata.CONTROL_AWB_MODE_* constants.
+     * Emits an empty list if no camera is active or if modes cannot be determined.
+     */
+    val availableAwbModesFlow: StateFlow<List<Int>>
+
+    /**
+     * A flow that emits camera-related error events.
+     * UI layers can collect this to display user-friendly error messages or take action.
+     */
+    val cameraErrorFlow: kotlinx.coroutines.flow.SharedFlow<CameraErrorEvent>
+
 
     // --- Camera Controls ---
 
