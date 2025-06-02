@@ -5,7 +5,18 @@ import android.widget.Toast
 import androidx.camera.core.AspectRatio
 import androidx.camera.core.Preview
 import androidx.camera.view.PreviewView
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cameraswitch
 import androidx.compose.material.icons.filled.Tv // Using Tv icon for external display
@@ -157,7 +168,15 @@ fun CameraScreen(
                     viewModel.clearExternalDisplayInfo()
                 },
                 title = { Text("External Display Information") },
-                text = { Text(info) },
+                text = {
+                    Box(modifier = Modifier.heightIn(max = 400.dp)) { // Constrain the max height
+                        val scrollState = rememberScrollState()
+                        Text(
+                            text = info, // This is the externalDisplayDetailedInfo string
+                            modifier = Modifier.verticalScroll(scrollState)
+                        )
+                    }
+                },
                 confirmButton = {
                     Button(onClick = { viewModel.clearExternalDisplayInfo() }) {
                         Text("OK")
