@@ -2,15 +2,14 @@ package com.google.codelab.android.camera
 
 import android.app.Presentation
 import android.content.Context
+import android.graphics.Color // For debug background colors
 import android.os.Bundle
-import android.util.DisplayMetrics // Re-adding for the restored onCreate
+import android.util.DisplayMetrics
 import android.util.Log
 import android.view.Display
-// import android.view.View // No longer used in the restored onCreate
 import android.view.ViewGroup
 import android.widget.FrameLayout
-// import androidx.camera.view.PreviewView // No longer directly used in the new onCreate, but member previewView still exists
-import androidx.camera.view.PreviewView // Keeping for member `previewView`
+import androidx.camera.view.PreviewView
 
 class ExternalDisplayPresentation(
     outerContext: Context,
@@ -21,7 +20,7 @@ class ExternalDisplayPresentation(
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        Log.d("ExternalDisplay", "onCreate: Restoring PreviewView in full-screen layout.")
+        Log.d("ExternalDisplay", "onCreate: Debug with background colors. FIT_CENTER test.")
 
         // 1. Ensure Presentation window fills the display
         val currentWindow = this.window
@@ -41,26 +40,27 @@ class ExternalDisplayPresentation(
         val physicalDisplayHeight = displayMetrics.heightPixels
         Log.d("ExternalDisplay", "Physical Display Metrics: ${physicalDisplayWidth}x${physicalDisplayHeight}.")
 
-        // 3. Setup FrameLayout (using Presentation's context, explicitly sized, no rotation)
+        // 3. Setup FrameLayout
         val frameLayout = FrameLayout(this.context)
         val frameLayoutParams = ViewGroup.LayoutParams(physicalDisplayWidth, physicalDisplayHeight)
         frameLayout.layoutParams = frameLayoutParams
         frameLayout.rotation = 0f
-        Log.d("ExternalDisplay", "FrameLayout (context: ${this.context}) layout set to ${physicalDisplayWidth}x${physicalDisplayHeight}, rotation 0f.")
+        frameLayout.setBackgroundColor(android.graphics.Color.RED)
+        Log.d("ExternalDisplay", "FrameLayout layout: ${physicalDisplayWidth}x${physicalDisplayHeight}, rotation 0f, BG RED.")
 
-        // 4. Setup PreviewView (using Presentation's context, explicitly sized)
-        // 'previewView' must be a class member (private lateinit var previewView: PreviewView) to be accessible by getPreviewView()
-        previewView = PreviewView(this.context)
+        // 4. Setup PreviewView
+        previewView = PreviewView(this.context) // previewView is a class member
         val previewViewLayoutParams = ViewGroup.LayoutParams(physicalDisplayWidth, physicalDisplayHeight)
         previewView.layoutParams = previewViewLayoutParams
+        previewView.setBackgroundColor(android.graphics.Color.GREEN)
         previewView.scaleType = PreviewView.ScaleType.FIT_CENTER
-        Log.d("ExternalDisplay", "PreviewView (context: ${this.context}) layout set to ${physicalDisplayWidth}x${physicalDisplayHeight}, ScaleType FIT_CENTER.")
+        Log.d("ExternalDisplay", "PreviewView layout: ${physicalDisplayWidth}x${physicalDisplayHeight}, BG GREEN, ScaleType FIT_CENTER.")
 
         // 5. Add PreviewView to FrameLayout and set content view
         frameLayout.addView(previewView)
         setContentView(frameLayout)
 
-        Log.d("ExternalDisplay", "ExternalDisplayPresentation onCreate complete. PreviewView restored in explicitly sized full-screen layout.")
+        Log.d("ExternalDisplay", "onCreate complete. FIT_CENTER test with colored backgrounds.")
     }
 
     fun getPreviewView(): PreviewView {
