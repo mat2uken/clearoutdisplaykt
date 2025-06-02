@@ -2,13 +2,16 @@ package com.google.codelab.android.camera
 
 import android.app.Presentation
 import android.content.Context
+import android.graphics.Color
 import android.os.Bundle
-import android.util.DisplayMetrics
+// import android.util.DisplayMetrics // No longer directly used in the new onCreate
 import android.util.Log
 import android.view.Display
+import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
-import androidx.camera.view.PreviewView
+// import androidx.camera.view.PreviewView // No longer directly used in the new onCreate, but member previewView still exists
+import androidx.camera.view.PreviewView // Keeping for member `previewView`
 
 class ExternalDisplayPresentation(
     outerContext: Context,
@@ -19,47 +22,45 @@ class ExternalDisplayPresentation(
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        Log.d("ExternalDisplay", "onCreate: Starting setup.")
+        Log.d("ExternalDisplay", "Blue Screen Test: onCreate starting.")
 
         // 1. Ensure Presentation window fills the display
         val currentWindow = this.window
         if (currentWindow == null) {
-            Log.e("ExternalDisplay", "Presentation window is null, cannot set layout parameters.")
+            Log.e("ExternalDisplay", "Blue Screen Test: Presentation window is null.")
         } else {
             currentWindow.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-            Log.d("ExternalDisplay", "Set Presentation window layout to MATCH_PARENT.")
+            Log.d("ExternalDisplay", "Blue Screen Test: Presentation window layout set to MATCH_PARENT.")
         }
 
-        // 2. Get physical display metrics
-        val displayMetrics = android.util.DisplayMetrics()
-        // 'display' is a property of the Presentation class, inherited from its constructor arguments.
-        @Suppress("DEPRECATION") // display.getRealMetrics is deprecated but needed.
-        this.display.getRealMetrics(displayMetrics)
-        val physicalDisplayWidth = displayMetrics.widthPixels
-        val physicalDisplayHeight = displayMetrics.heightPixels
-        Log.d("ExternalDisplay", "Physical Display Metrics: ${physicalDisplayWidth}x${physicalDisplayHeight}.")
+        // 2. Create a simple View to paint blue
+        val blueView = View(this.context) // Use Presentation's context
 
-        // 3. Setup FrameLayout (using Presentation's context)
-        // Ensure 'context' is Presentation's context (it is by default when just 'context' is used inside Presentation class)
-        val frameLayout = FrameLayout(this.context)
-        val frameLayoutParams = ViewGroup.LayoutParams(physicalDisplayWidth, physicalDisplayHeight)
-        frameLayout.layoutParams = frameLayoutParams
-        frameLayout.rotation = 0f
-        Log.d("ExternalDisplay", "FrameLayout (context: ${this.context}) layout set to ${physicalDisplayWidth}x${physicalDisplayHeight}, rotation 0f.")
+        // 3. Set its background color to blue
+        blueView.setBackgroundColor(android.graphics.Color.BLUE)
+        Log.d("ExternalDisplay", "Blue Screen Test: View background color set to BLUE.")
 
-        // 4. Setup PreviewView (using Presentation's context)
-        // Ensure 'previewView' is a class member: private lateinit var previewView: PreviewView
-        previewView = PreviewView(this.context)
-        val previewViewLayoutParams = ViewGroup.LayoutParams(physicalDisplayWidth, physicalDisplayHeight)
-        previewView.layoutParams = previewViewLayoutParams
-        previewView.scaleType = PreviewView.ScaleType.FIT_CENTER
-        Log.d("ExternalDisplay", "PreviewView (context: ${this.context}) layout set to ${physicalDisplayWidth}x${physicalDisplayHeight}, ScaleType FIT_CENTER.")
+        // 4. Set its layout parameters to fill its parent
+        val layoutParams = ViewGroup.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT
+        )
+        blueView.layoutParams = layoutParams
+        Log.d("ExternalDisplay", "Blue Screen Test: View layout params set to MATCH_PARENT.")
 
-        // 5. Add PreviewView to FrameLayout and set content view
-        frameLayout.addView(previewView)
-        setContentView(frameLayout)
-
-        Log.d("ExternalDisplay", "ExternalDisplayPresentation onCreate complete. All components explicitly sized to physical display.")
+        // 5. Set this blueView as the content view
+        try {
+            setContentView(blueView)
+            Log.d("ExternalDisplay", "Blue Screen Test: setContentView(blueView) called successfully.")
+        } catch (e: Exception) {
+            Log.e("ExternalDisplay", "Blue Screen Test: Error calling setContentView(blueView)", e)
+            // Fallback to a simple FrameLayout if direct View fails, though it shouldn't.
+            val fallbackLayout = FrameLayout(this.context)
+            fallbackLayout.setBackgroundColor(android.graphics.Color.RED) // Red to indicate fallback
+            setContentView(fallbackLayout)
+             Log.d("ExternalDisplay", "Blue Screen Test: Fallback to RED FrameLayout executed.")
+        }
+        Log.d("ExternalDisplay", "Blue Screen Test: onCreate complete.")
     }
 
     fun getPreviewView(): PreviewView {
