@@ -59,18 +59,18 @@ class ExternalDisplayPresentation(
             Log.d("ExternalDisplay", "Applying Landscape/Square strategy.")
             frameLayout.rotation = 0f
 
-            // Ensure PreviewView layout params are MATCH_PARENT (should be default)
+            // Explicitly set PreviewView dimensions
             val pLayoutParams = previewView.layoutParams
-            if (pLayoutParams.width != ViewGroup.LayoutParams.MATCH_PARENT || pLayoutParams.height != ViewGroup.LayoutParams.MATCH_PARENT) {
-                pLayoutParams.width = ViewGroup.LayoutParams.MATCH_PARENT
-                pLayoutParams.height = ViewGroup.LayoutParams.MATCH_PARENT
+            if (pLayoutParams.width != displayWidth || pLayoutParams.height != displayHeight) {
+                pLayoutParams.width = displayWidth
+                pLayoutParams.height = displayHeight
                 previewView.layoutParams = pLayoutParams
-                Log.d("ExternalDisplay", "Set PreviewView layout to MATCH_PARENT for Landscape.")
+                Log.d("ExternalDisplay", "Explicitly set PreviewView layout to ${displayWidth}x${displayHeight} for Landscape.")
             } else {
-                Log.d("ExternalDisplay", "PreviewView layout already MATCH_PARENT for Landscape.")
+                Log.d("ExternalDisplay", "PreviewView layout already ${displayWidth}x${displayHeight} for Landscape.")
             }
-            previewView.scaleType = PreviewView.ScaleType.FIT_CENTER
-            Log.d("ExternalDisplay", "Landscape/Square: Rotation=0, ScaleType=FIT_CENTER, Layout=MATCH_PARENT.")
+            previewView.scaleType = PreviewView.ScaleType.FIT_CENTER // Should remain FIT_CENTER
+            Log.d("ExternalDisplay", "Landscape/Square: Rotation=0, ScaleType=FIT_CENTER, Layout=${displayWidth}x${displayHeight}.")
 
         } else { // Portrait
             Log.d("ExternalDisplay", "Applying Portrait strategy.")
