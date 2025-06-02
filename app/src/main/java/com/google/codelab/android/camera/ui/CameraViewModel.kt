@@ -298,14 +298,17 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
         // _activePreviewUseCase.value?.setSurfaceProvider(externalDisplayPresentation?.getPreviewView()?.surfaceProvider)
         // Corrected logic for setting surface provider on the *active* use case:
 
-        // Temporarily disabled for blue screen test:
-        // _activePreviewUseCase.value?.let { preview ->
-        //     Log.d("CameraViewModel", "Setting surface provider for external display's PreviewView from active PreviewUseCase in showExternalPresentation.")
-        //     preview.setSurfaceProvider(externalDisplayPresentation?.getPreviewView()?.surfaceProvider)
-        // } ?: run {
-        //     Log.w("CameraViewModel", "Cannot set surface provider in showExternalPresentation: _activePreviewUseCase is null.")
-        // }
-        Log.d("CameraViewModel", "Surface provider for external display temporarily NOT set due to blue screen test.")
+        // Restore surface provider logic
+        _activePreviewUseCase.value?.let { preview ->
+            externalDisplayPresentation?.getPreviewView()?.let { externalPreviewView ->
+                preview.setSurfaceProvider(externalPreviewView.surfaceProvider)
+                Log.d("CameraViewModel", "External display surface provider set on active preview use case.")
+            } ?: run {
+                Log.e("CameraViewModel", "ExternalDisplayPresentation or its getPreviewView() is null. Cannot set surface provider.")
+            }
+        } ?: run {
+             Log.w("CameraViewModel", "Cannot set surface provider for external display: _activePreviewUseCase is null.")
+        }
         requestExternalDisplayInfo() // Request info when presentation is shown
     }
 
