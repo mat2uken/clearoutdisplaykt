@@ -18,8 +18,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.RotateRight
 import androidx.compose.material.icons.filled.Cameraswitch
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Tv // Using Tv icon for external display
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -148,7 +148,7 @@ fun CameraScreen(
                         viewModel.rotateExternalDisplay()
                     }) {
                         Icon(
-                            imageVector = Icons.AutoMirrored.Filled.RotateRight,
+                            imageVector = Icons.Filled.Refresh,
                             contentDescription = "Rotate External Display",
                             tint = MaterialTheme.colorScheme.onPrimaryContainer // Consistent with camera switch
                         )
