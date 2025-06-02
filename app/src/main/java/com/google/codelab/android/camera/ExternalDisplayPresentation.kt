@@ -19,6 +19,16 @@ class ExternalDisplayPresentation(
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Set the Presentation window layout to MATCH_PARENT
+        val currentWindow = this.window
+        if (currentWindow == null) {
+            Log.e("ExternalDisplay", "Presentation window is null, cannot set layout parameters.")
+        } else {
+            currentWindow.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+            Log.d("ExternalDisplay", "Set Presentation window layout to MATCH_PARENT.")
+        }
+
         val frameLayout = FrameLayout(context)
         previewView = PreviewView(context)
         previewView.layoutParams = ViewGroup.LayoutParams(
