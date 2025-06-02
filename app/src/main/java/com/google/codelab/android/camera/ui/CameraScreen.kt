@@ -9,7 +9,13 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cameraswitch
 import androidx.compose.material.icons.filled.Tv // Using Tv icon for external display
-import androidx.compose.material3.*
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -35,6 +41,7 @@ fun CameraScreen(
     val maxZoom by viewModel.maxZoomRatio.collectAsState()
     val isExternalDisplayConnected by viewModel.isExternalDisplayConnected.collectAsState()
     val toastMessage by viewModel.toastMessage.collectAsState()
+    val externalDisplayInfo by viewModel.externalDisplayDetailedInfo.collectAsState()
 
     // For PreviewView
     val previewView = remember { PreviewView(context) }
@@ -124,16 +131,39 @@ fun CameraScreen(
 
                 // External Display Indicator
                 if (isExternalDisplayConnected) {
-                    Icon(
-                        imageVector = Icons.Filled.Tv,
-                        contentDescription = "External Display Connected",
-                        tint = MaterialTheme.colorScheme.primary
-                    )
+                    IconButton(onClick = {
+                        Log.d("CameraScreen", "External display icon clicked, requesting info.")
+                        viewModel.requestExternalDisplayInfo()
+                    }) {
+                        Icon(
+                            imageVector = Icons.Filled.Tv,
+                            contentDescription = "External Display Connected - Show Info",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
                 } else {
                     // Occupy space if not connected to maintain layout balance
+                    // If the IconButton above takes specific space, this Spacer might need adjustment
+                    // For now, assuming IconButton doesn't use weight, so this Spacer is for balance with camera switch.
                     Spacer(modifier = Modifier.weight(1f))
                 }
             }
+        }
+
+        // AlertDialog for External Display Info
+        externalDisplayInfo?.let { info ->
+            AlertDialog(
+                onDismissRequest = {
+                    viewModel.clearExternalDisplayInfo()
+                },
+                title = { Text("External Display Information") },
+                text = { Text(info) },
+                confirmButton = {
+                    Button(onClick = { viewModel.clearExternalDisplayInfo() }) {
+                        Text("OK")
+                    }
+                }
+            )
         }
     }
 }

@@ -5,8 +5,10 @@ import android.content.Context
 import android.hardware.display.DisplayManager
 import android.os.Handler
 import android.os.Looper
+import android.util.DisplayMetrics
 import android.util.Log
 import android.view.Display
+import android.view.Surface
 import androidx.camera.core.CameraInfo
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.Preview
@@ -22,6 +24,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.lang.StringBuilder
 import java.util.concurrent.Executor
 
 class CameraViewModel(application: Application) : AndroidViewModel(application) {
@@ -60,6 +63,9 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
     // --- External Display State ---
     private val _isExternalDisplayConnected = MutableStateFlow(false)
     val isExternalDisplayConnected: StateFlow<Boolean> = _isExternalDisplayConnected.asStateFlow()
+
+    private val _externalDisplayDetailedInfo = MutableStateFlow<String?>(null)
+    val externalDisplayDetailedInfo: StateFlow<String?> = _externalDisplayDetailedInfo.asStateFlow()
 
     private val _toastMessage = MutableStateFlow<String?>(null)
     val toastMessage: StateFlow<String?> = _toastMessage.asStateFlow()
@@ -246,7 +252,48 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
         previewUseCase?.setSurfaceProvider(null) // Null out the surface provider
         Log.d("CameraViewModel", "External presentation dismissed, old surface provider nulled. CameraScreen will drive refresh.")
         externalDisplayPresentation = null
+        clearExternalDisplayInfo() // Clear detailed info when presentation is dismissed
         // DO NOT REBIND HERE - CameraScreen's DisposableEffect will handle it if isExternalDisplayConnected changes
+    }
+
+    fun requestExternalDisplayInfo() {
+        val displays = displayManager.getDisplays(DisplayManager.DISPLAY_CATEGORY_PRESENTATION)
+        if (displays.isNotEmpty()) {
+            val display = displays[0] // Assuming the first one is the one of interest
+            val metrics = DisplayMetrics()
+            @Suppress("DEPRECATION") // getRealMetrics is deprecated but necessary for older APIs if not handled by WindowManager
+            display.getRealMetrics(metrics)
+
+            val rotationDegrees = when (display.rotation) {
+                Surface.ROTATION_0 -> "0°"
+                Surface.ROTATION_90 -> "90°"
+                Surface.ROTATION_180 -> "180°"
+                Surface.ROTATION_270 -> "270°"
+                else -> "Unknown"
+            }
+
+            val info = StringBuilder()
+            info.append("Display ID: ${display.displayId}\n")
+            info.append("Name: ${display.name}\n")
+            info.append("Width: ${metrics.widthPixels}px\n")
+            info.append("Height: ${metrics.heightPixels}px\n")
+            info.append("Density DPI: ${metrics.densityDpi}\n")
+            info.append("Actual X DPI: ${metrics.xdpi}\n")
+            info.append("Actual Y DPI: ${metrics.ydpi}\n")
+            info.append("Reported Rotation: $rotationDegrees (relative to natural orientation)\n")
+            info.append("Refresh Rate: ${display.mode.refreshRate} Hz\n")
+            // Add more info if deemed necessary, e.g., display.state
+
+            _externalDisplayDetailedInfo.value = info.toString()
+            Log.d("CameraViewModel", "External display info collected: ${info.toString().replace("\n", ", ")}")
+        } else {
+            _externalDisplayDetailedInfo.value = "No external display connected."
+            Log.d("CameraViewModel", "Request for external display info, but no display connected.")
+        }
+    }
+
+    fun clearExternalDisplayInfo() {
+        _externalDisplayDetailedInfo.value = null
     }
 
     override fun onCleared() {
