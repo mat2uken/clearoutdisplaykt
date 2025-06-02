@@ -286,27 +286,38 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
         // At this point, externalDisplayPresentation should be null, or we are about to replace it.
         // The _externalDisplayRotationDegrees.value is either 0 (for a new display via onDisplayAdded)
         // or the value set by rotateExternalDisplay().
+        // ExternalDisplayPresentation constructor is now 2-argument: (Context, Display)
         externalDisplayPresentation = ExternalDisplayPresentation(
             getApplication(),
-            display,
-            _externalDisplayRotationDegrees.value // Pass the current rotation state
+            display
         )
-        Log.d("CameraViewModel", "Showing external presentation on display: ${display.displayId} with intended rotation: ${_externalDisplayRotationDegrees.value}°.")
+        Log.d("CameraViewModel", "Showing external presentation on display: ${display.displayId}. Rotation is handled by Preview use case.")
         externalDisplayPresentation?.show()
-        previewUseCase?.setSurfaceProvider(externalDisplayPresentation?.getPreviewView()?.surfaceProvider)
-        Log.d("CameraViewModel", "Set surface provider for external display's PreviewView.")
+        // The following line used a stale reference 'previewUseCase'. It should be '_activePreviewUseCase.value'.
+        // And this logic is now in bindCameraUseCases and after externalDisplayPresentation.show()
+        // _activePreviewUseCase.value?.setSurfaceProvider(externalDisplayPresentation?.getPreviewView()?.surfaceProvider)
+        // Corrected logic for setting surface provider on the *active* use case:
+        _activePreviewUseCase.value?.let { preview ->
+            Log.d("CameraViewModel", "Setting surface provider for external display's PreviewView from active PreviewUseCase in showExternalPresentation.")
+            preview.setSurfaceProvider(externalDisplayPresentation?.getPreviewView()?.surfaceProvider)
+        } ?: run {
+            Log.w("CameraViewModel", "Cannot set surface provider in showExternalPresentation: _activePreviewUseCase is null.")
+        }
+        // Log.d("CameraViewModel", "Set surface provider for external display's PreviewView.") // Redundant log removed
         requestExternalDisplayInfo() // Request info when presentation is shown
     }
 
     private fun dismissExternalPresentation(isPartOfRotationSequence: Boolean = false) {
         externalDisplayPresentation?.dismiss()
-        previewUseCase?.setSurfaceProvider(null) // Null out the surface provider
+        // The following line used a stale reference 'previewUseCase'. It should be '_activePreviewUseCase.value'.
+        // _activePreviewUseCase.value?.setSurfaceProvider(null) // This is correct from previous step.
         Log.d("CameraViewModel", "External presentation dismissed. Part of rotation: $isPartOfRotationSequence")
         externalDisplayPresentation = null
         clearExternalDisplayInfo() // Clear detailed info when presentation is dismissed
         if (!isPartOfRotationSequence) {
-            _externalDisplayRotationDegrees.value = 0
-            Log.d("CameraViewModel", "Rotation reset to 0 (not part of rotation sequence).")
+            // _externalDisplayRotationDegrees.value = 0 // This was Surface.ROTATION_0 previously
+            _externalDisplayRotationDegrees.value = Surface.ROTATION_0 // Correcting to use Surface constant
+            Log.d("CameraViewModel", "Rotation reset to Surface.ROTATION_0 (not part of rotation sequence).")
         }
         // DO NOT REBIND HERE - CameraScreen's DisposableEffect will handle it if isExternalDisplayConnected changes
     }
