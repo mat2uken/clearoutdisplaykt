@@ -35,6 +35,7 @@ fun CameraScreen(
     val maxZoom by viewModel.maxZoomRatio.collectAsState()
     val isExternalDisplayConnected by viewModel.isExternalDisplayConnected.collectAsState()
     val toastMessage by viewModel.toastMessage.collectAsState()
+    val isCameraInitialized by viewModel.isCameraInitialized.collectAsState()
 
     // For PreviewView
     val previewView = remember { PreviewView(context) }
@@ -48,97 +49,108 @@ fun CameraScreen(
         }
     }
 
-    // Lifecycle effect to manage camera binding via ViewModel
-    DisposableEffect(selectedLensFacing, lifecycleOwner, isExternalDisplayConnected) { // Re-run if lens, lifecycle owner or external display status changes
-        Log.d("CameraScreen", "DisposableEffect triggered. Lens: $selectedLensFacing, ExternalDisplay: $isExternalDisplayConnected, Lifecycle: $lifecycleOwner")
+    if (isCameraInitialized) {
+        // Existing Box with AndroidView for PreviewView
+        Box(modifier = Modifier.fillMaxSize()) {
+            AndroidView(
+                factory = { previewView },
+                modifier = Modifier.fillMaxSize(),
+                update = { view ->
+                    view.scaleType = PreviewView.ScaleType.FILL_CENTER
+                    Log.d("CameraScreen", "AndroidView updated, PreviewView scaleType set.")
+                }
+            )
 
-        val mainDisplayRotation = context.display!!.rotation // Use of !! as context.display should not be null in an activity/composable context
-        Log.d("CameraScreen", "Main display rotation: $mainDisplayRotation")
-
-        val previewUseCase = Preview.Builder()
-            .setTargetAspectRatio(AspectRatio.RATIO_16_9)
-            .setTargetRotation(mainDisplayRotation) // Add this line
-            .build()
-            .also {
-                it.setSurfaceProvider(previewView.surfaceProvider)
-            }
-        viewModel.setPreviewUseCase(previewUseCase)
-        viewModel.attachLifecycleOwner(lifecycleOwner)
-
-        onDispose {
-            Log.d("CameraScreen", "DisposableEffect onDispose. Lens: $selectedLensFacing, ExternalDisplay: $isExternalDisplayConnected")
-            viewModel.detachLifecycleOwner()
-        }
-    }
-
-
-    Box(modifier = Modifier.fillMaxSize()) {
-        AndroidView(
-            factory = { previewView },
-            modifier = Modifier.fillMaxSize(),
-            update = { view ->
-                view.scaleType = PreviewView.ScaleType.FILL_CENTER
-                Log.d("CameraScreen", "AndroidView updated, PreviewView scaleType set.")
-            }
-        )
-
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.Bottom,
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            // Zoom Slider
-            if (minZoom < maxZoom) { // Show slider only if zoom is supported
-                Slider(
-                    value = linearZoom,
-                    onValueChange = { viewModel.setLinearZoom(it) },
-                    valueRange = 0f..1f,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                // Text(text = "Zoom: ${"%.2f".format(zoomRatio)}x", style = MaterialTheme.typography.bodySmall) // zoomRatio from VM is actual
-                 Text(text = "Zoom: ${"%.2f".format(minZoom + (maxZoom - minZoom) * linearZoom)}x", style = MaterialTheme.typography.bodySmall)
-
-
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Controls Row
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceAround,
-                verticalAlignment = Alignment.CenterVertically
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.Bottom,
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Camera Switch Button
-                if (availableLenses.size > 1) {
-                    IconButton(onClick = {
-                        Log.d("CameraScreen", "Switch camera button clicked")
-                        viewModel.switchCamera()
-                    }) {
-                        Icon(
-                            imageVector = Icons.Filled.Cameraswitch,
-                            contentDescription = "Switch Camera",
-                            tint = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                    }
-                } else {
-                    Spacer(modifier = Modifier.weight(1f)) // Keep spacing if no switch
+                // Zoom Slider
+                if (minZoom < maxZoom) { // Show slider only if zoom is supported
+                    Slider(
+                        value = linearZoom,
+                        onValueChange = { viewModel.setLinearZoom(it) },
+                        valueRange = 0f..1f,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    // Text(text = "Zoom: ${"%.2f".format(zoomRatio)}x", style = MaterialTheme.typography.bodySmall) // zoomRatio from VM is actual
+                    Text(text = "Zoom: ${"%.2f".format(minZoom + (maxZoom - minZoom) * linearZoom)}x", style = MaterialTheme.typography.bodySmall)
                 }
 
-                // External Display Indicator
-                if (isExternalDisplayConnected) {
-                    Icon(
-                        imageVector = Icons.Filled.Tv,
-                        contentDescription = "External Display Connected",
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                } else {
-                    // Occupy space if not connected to maintain layout balance
-                    Spacer(modifier = Modifier.weight(1f))
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Controls Row
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceAround,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Camera Switch Button
+                    if (availableLenses.size > 1) {
+                        IconButton(onClick = {
+                            Log.d("CameraScreen", "Switch camera button clicked")
+                            viewModel.switchCamera()
+                        }) {
+                            Icon(
+                                imageVector = Icons.Filled.Cameraswitch,
+                                contentDescription = "Switch Camera",
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                    } else {
+                        Spacer(modifier = Modifier.weight(1f)) // Keep spacing if no switch
+                    }
+
+                    // External Display Indicator
+                    if (isExternalDisplayConnected) {
+                        Icon(
+                            imageVector = Icons.Filled.Tv,
+                            contentDescription = "External Display Connected",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    } else {
+                        // Occupy space if not connected to maintain layout balance
+                        Spacer(modifier = Modifier.weight(1f))
+                    }
                 }
             }
+        }
+
+        // Lifecycle effect to manage camera binding via ViewModel
+        DisposableEffect(selectedLensFacing, lifecycleOwner, isExternalDisplayConnected) { // Re-run if lens, lifecycle owner or external display status changes
+            Log.d("CameraScreen", "DisposableEffect triggered. Lens: $selectedLensFacing, ExternalDisplay: $isExternalDisplayConnected, Lifecycle: $lifecycleOwner")
+
+            val mainDisplayRotation = context.display!!.rotation // Use of !! as context.display should not be null in an activity/composable context
+            Log.d("CameraScreen", "Main display rotation: $mainDisplayRotation")
+
+            val previewUseCase = Preview.Builder()
+                .setTargetAspectRatio(AspectRatio.RATIO_16_9)
+                .setTargetRotation(mainDisplayRotation) // Add this line
+                .build()
+                .also {
+                    it.setSurfaceProvider(previewView.surfaceProvider)
+                }
+            viewModel.setPreviewUseCase(previewUseCase)
+            viewModel.attachLifecycleOwner(lifecycleOwner)
+
+            onDispose {
+                Log.d("CameraScreen", "DisposableEffect onDispose. Lens: $selectedLensFacing, ExternalDisplay: $isExternalDisplayConnected")
+                viewModel.detachLifecycleOwner()
+            }
+        }
+    } else {
+        // Optional: Show a loading indicator or a placeholder
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            // CircularProgressIndicator() // Or Text("Initializing Camera...")
+            Log.d("CameraScreen", "Camera not yet initialized. Waiting for ViewModel.")
+            // For now, just log, a blank screen is fine if it's brief.
+            // If it can take time, a CircularProgressIndicator would be better.
         }
     }
 }

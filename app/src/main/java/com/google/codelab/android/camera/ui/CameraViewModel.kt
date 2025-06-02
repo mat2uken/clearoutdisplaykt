@@ -64,16 +64,23 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
     private val _toastMessage = MutableStateFlow<String?>(null)
     val toastMessage: StateFlow<String?> = _toastMessage.asStateFlow()
 
+    private val _isCameraInitialized = MutableStateFlow(false)
+    val isCameraInitialized: StateFlow<Boolean> = _isCameraInitialized.asStateFlow()
+
     private lateinit var displayListener: DisplayManager.DisplayListener
 
     init {
-        viewModelScope.launch {
-            _cameraProviderFuture.addListener({
-                updateAvailableLenses()
-                // We now need LifecycleOwner to bind, so initial bind might be deferred
-                // to when attachLifecycleOwner is called.
-            }, mainExecutor)
-        }
+        _cameraProviderFuture.addListener({
+            updateAvailableLenses()
+            _isCameraInitialized.value = true
+            Log.d("CameraViewModel", "Camera provider initialized and lenses updated. isCameraInitialized set to true.")
+            // We now need LifecycleOwner to bind, so initial bind might be deferred
+            // to when attachLifecycleOwner is called.
+            // ViewModelScope is not strictly needed here for addListener itself,
+            // but operations inside the listener might need it if they were long-running.
+            // For now, updateAvailableLenses and setting a flow value are quick.
+        }, mainExecutor)
+
         displayListener = object : DisplayManager.DisplayListener {
             override fun onDisplayAdded(displayId: Int) {
                 checkForExternalDisplays()
@@ -151,11 +158,16 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
 
 
     private fun bindCameraUseCases(lifecycleOwner: LifecycleOwner) {
+        if (!isCameraInitialized.value) {
+            Log.w("CameraViewModel", "bindCameraUseCases called before camera system is fully initialized. Aborting.")
+            _toastMessage.value = "Camera system not ready yet."
+            return
+        }
         if (previewUseCase == null) {
             _toastMessage.value = "Preview not ready for binding."
             return
         }
-        if (!_cameraProviderFuture.isDone) {
+        if (!_cameraProviderFuture.isDone) { // Should be redundant if isCameraInitialized is true, but good check.
             _toastMessage.value = "CameraProvider not ready."
             return
         }
