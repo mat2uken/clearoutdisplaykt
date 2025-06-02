@@ -2,7 +2,7 @@ package com.google.codelab.android.camera
 
 import android.app.Presentation
 import android.content.Context
-import android.graphics.Color // For debug background colors
+// import android.graphics.Color // No longer needed
 import android.os.Bundle
 import android.util.DisplayMetrics
 import android.util.Log
@@ -20,7 +20,7 @@ class ExternalDisplayPresentation(
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        Log.d("ExternalDisplay", "onCreate: Debug with background colors. FIT_CENTER test.")
+        Log.d("ExternalDisplay", "onCreate: Setting up full-screen PreviewView.")
 
         // 1. Ensure Presentation window fills the display
         val currentWindow = this.window
@@ -45,22 +45,22 @@ class ExternalDisplayPresentation(
         val frameLayoutParams = ViewGroup.LayoutParams(physicalDisplayWidth, physicalDisplayHeight)
         frameLayout.layoutParams = frameLayoutParams
         frameLayout.rotation = 0f
-        frameLayout.setBackgroundColor(android.graphics.Color.RED)
-        Log.d("ExternalDisplay", "FrameLayout layout: ${physicalDisplayWidth}x${physicalDisplayHeight}, rotation 0f, BG RED.")
+        // frameLayout.setBackgroundColor(android.graphics.Color.RED) // Removed
+        Log.d("ExternalDisplay", "FrameLayout layout set to ${physicalDisplayWidth}x${physicalDisplayHeight}, rotation 0f.")
 
         // 4. Setup PreviewView
         previewView = PreviewView(this.context) // previewView is a class member
         val previewViewLayoutParams = ViewGroup.LayoutParams(physicalDisplayWidth, physicalDisplayHeight)
         previewView.layoutParams = previewViewLayoutParams
-        previewView.setBackgroundColor(android.graphics.Color.GREEN)
+        // previewView.setBackgroundColor(android.graphics.Color.GREEN) // Removed
         previewView.scaleType = PreviewView.ScaleType.FIT_CENTER
-        Log.d("ExternalDisplay", "PreviewView layout: ${physicalDisplayWidth}x${physicalDisplayHeight}, BG GREEN, ScaleType FIT_CENTER.")
+        Log.d("ExternalDisplay", "PreviewView layout set to ${physicalDisplayWidth}x${physicalDisplayHeight}, ScaleType FIT_CENTER.")
 
         // 5. Add PreviewView to FrameLayout and set content view
         frameLayout.addView(previewView)
         setContentView(frameLayout)
 
-        Log.d("ExternalDisplay", "onCreate complete. FIT_CENTER test with colored backgrounds.")
+        Log.d("ExternalDisplay", "onCreate complete. PreviewView ready.")
     }
 
     fun getPreviewView(): PreviewView {

@@ -74,6 +74,9 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
     private val _externalDisplayRotationDegrees = MutableStateFlow(Surface.ROTATION_0) // Use Surface constants
     val externalDisplayRotationDegrees: StateFlow<Int> = _externalDisplayRotationDegrees.asStateFlow()
 
+    private val _cameraOutputResolution = MutableStateFlow<String?>(null)
+    val cameraOutputResolution: StateFlow<String?> = _cameraOutputResolution.asStateFlow()
+
     private val _toastMessage = MutableStateFlow<String?>(null)
     val toastMessage: StateFlow<String?> = _toastMessage.asStateFlow()
 
@@ -135,6 +138,7 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
         currentLifecycleOwner = null
         cameraProvider.unbindAll()
         _activePreviewUseCase.value = null
+        _cameraOutputResolution.value = null // Clear resolution info
     }
 
     private fun updateAvailableLenses() {
@@ -192,6 +196,19 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
         val newPreview = Preview.Builder()
             .setTargetRotation(_externalDisplayRotationDegrees.value)
             .build()
+
+        // Add listener for resolution updates
+        newPreview.resolutionInfoObservable.addListener({
+            val resolutionInfo = newPreview.resolutionInfo
+            if (resolutionInfo != null) {
+                val size = resolutionInfo.resolution
+                _cameraOutputResolution.value = "PreviewRes: ${size.width}x${size.height} (Rot:${resolutionInfo.rotationDegrees}°)"
+                Log.d("CameraViewModel", "Preview resolution updated: ${_cameraOutputResolution.value}")
+            } else {
+                _cameraOutputResolution.value = "PreviewRes: N/A (Info not available)"
+                Log.d("CameraViewModel", "Preview resolutionInfo is null.")
+            }
+        }, ContextCompat.getMainExecutor(getApplication()))
 
         _activePreviewUseCase.value = newPreview // Expose the new preview use case
 
@@ -390,6 +407,9 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
             info.append("Reported Rotation: $rotationDegrees (relative to natural orientation)\n")
             info.append("Refresh Rate: ${display.mode.refreshRate} Hz\n")
             // Add more info if deemed necessary, e.g., display.state
+
+            val previewResStr = _cameraOutputResolution.value ?: "PreviewRes: N/A (Not fetched yet)"
+            info.append("$previewResStr\n")
 
             _externalDisplayDetailedInfo.value = info.toString()
             Log.d("CameraViewModel", "External display info collected: ${info.toString().replace("\n", ", ")}")
