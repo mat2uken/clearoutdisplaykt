@@ -19,6 +19,7 @@ class ExternalDisplayPresentation(
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Log.d("ExternalDisplay", "onCreate: Starting setup.")
 
         // 1. Ensure Presentation window fills the display
         val currentWindow = this.window
@@ -31,29 +32,34 @@ class ExternalDisplayPresentation(
 
         // 2. Get physical display metrics
         val displayMetrics = android.util.DisplayMetrics()
+        // 'display' is a property of the Presentation class, inherited from its constructor arguments.
         @Suppress("DEPRECATION") // display.getRealMetrics is deprecated but needed.
-        display.getRealMetrics(displayMetrics) // 'display' is the constructor param for Presentation
+        this.display.getRealMetrics(displayMetrics)
         val physicalDisplayWidth = displayMetrics.widthPixels
         val physicalDisplayHeight = displayMetrics.heightPixels
-        Log.d("ExternalDisplay", "Physical Display: ${physicalDisplayWidth}x${physicalDisplayHeight}.")
+        Log.d("ExternalDisplay", "Physical Display Metrics: ${physicalDisplayWidth}x${physicalDisplayHeight}.")
 
-        // 3. Setup FrameLayout (never rotates)
-        val frameLayout = FrameLayout(context) // Ensure context is the Presentation's context
+        // 3. Setup FrameLayout (using Presentation's context)
+        // Ensure 'context' is Presentation's context (it is by default when just 'context' is used inside Presentation class)
+        val frameLayout = FrameLayout(this.context)
+        val frameLayoutParams = ViewGroup.LayoutParams(physicalDisplayWidth, physicalDisplayHeight)
+        frameLayout.layoutParams = frameLayoutParams
         frameLayout.rotation = 0f
-        Log.d("ExternalDisplay", "FrameLayout rotation set to 0f.")
+        Log.d("ExternalDisplay", "FrameLayout (context: ${this.context}) layout set to ${physicalDisplayWidth}x${physicalDisplayHeight}, rotation 0f.")
 
-        // 4. Setup PreviewView (fixed size, never rotates its own content via rotation prop)
-        previewView = PreviewView(context) // Ensure previewView is a class member if accessed elsewhere (e.g. getPreviewView())
-        val pLayoutParams = ViewGroup.LayoutParams(physicalDisplayWidth, physicalDisplayHeight)
-        previewView.layoutParams = pLayoutParams
+        // 4. Setup PreviewView (using Presentation's context)
+        // Ensure 'previewView' is a class member: private lateinit var previewView: PreviewView
+        previewView = PreviewView(this.context)
+        val previewViewLayoutParams = ViewGroup.LayoutParams(physicalDisplayWidth, physicalDisplayHeight)
+        previewView.layoutParams = previewViewLayoutParams
         previewView.scaleType = PreviewView.ScaleType.FIT_CENTER
-        Log.d("ExternalDisplay", "PreviewView layout set to ${physicalDisplayWidth}x${physicalDisplayHeight}, ScaleType FIT_CENTER.")
+        Log.d("ExternalDisplay", "PreviewView (context: ${this.context}) layout set to ${physicalDisplayWidth}x${physicalDisplayHeight}, ScaleType FIT_CENTER.")
 
         // 5. Add PreviewView to FrameLayout and set content view
         frameLayout.addView(previewView)
         setContentView(frameLayout)
 
-        Log.d("ExternalDisplay", "ExternalDisplayPresentation onCreate complete. PreviewView should fill physical display size with FIT_CENTER scaling.")
+        Log.d("ExternalDisplay", "ExternalDisplayPresentation onCreate complete. All components explicitly sized to physical display.")
     }
 
     fun getPreviewView(): PreviewView {
