@@ -18,7 +18,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LifecycleOwner
-import androidx.lifecycle.Observer // Added for LiveData
+// import androidx.lifecycle.Observer // No longer needed for LiveData
 import androidx.lifecycle.viewModelScope
 import com.google.codelab.android.camera.ExternalDisplayPresentation
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -198,18 +198,6 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
             .setTargetRotation(_externalDisplayRotationDegrees.value)
             .build()
 
-        // Observe LiveData for resolution updates
-        newPreview.resolutionInfoLiveData.observe(lifecycleOwner, Observer { resolutionInfo ->
-            if (resolutionInfo != null) {
-                val size = resolutionInfo.resolution
-                _cameraOutputResolution.value = "PreviewRes: ${size.width}x${size.height} (Rot:${resolutionInfo.rotationDegrees}°)"
-                Log.d("CameraViewModel", "Preview resolution updated via LiveData: ${_cameraOutputResolution.value}")
-            } else {
-                _cameraOutputResolution.value = "PreviewRes: N/A (Info not available via LiveData)"
-                Log.d("CameraViewModel", "Preview resolutionInfo from LiveData is null.")
-            }
-        })
-
         _activePreviewUseCase.value = newPreview // Expose the new preview use case
 
         val cameraSelector = CameraSelector.Builder()
@@ -227,6 +215,23 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
             Log.d("CameraViewModel", "Successfully bound to lifecycle. Camera: $camera")
             updateZoomLimits(camera?.cameraInfo)
             setLinearZoom(_linearZoom.value)
+
+            // Synchronously get resolution info after binding
+            val currentBoundPreview = _activePreviewUseCase.value
+            if (currentBoundPreview != null) {
+                val resolutionInfo = currentBoundPreview.resolutionInfo // Synchronous call
+                if (resolutionInfo != null) {
+                    val size = resolutionInfo.resolution
+                    _cameraOutputResolution.value = "PreviewRes: ${size.width}x${size.height} (Rot:${resolutionInfo.rotationDegrees}°)"
+                    Log.d("CameraViewModel", "Preview resolution (synced after bind): ${_cameraOutputResolution.value}")
+                } else {
+                    _cameraOutputResolution.value = "PreviewRes: N/A (Info null post-bind)"
+                    Log.d("CameraViewModel", "Preview resolutionInfo is null post-bind.")
+                }
+            } else {
+                _cameraOutputResolution.value = "PreviewRes: N/A (Preview UC null post-bind)"
+                Log.d("CameraViewModel", "Preview use case is null post-bind, cannot get resolution.")
+            }
 
             // If an external display is active, immediately set its surface provider.
             // CameraScreen will handle the main display's surface provider via observing _activePreviewUseCase.
