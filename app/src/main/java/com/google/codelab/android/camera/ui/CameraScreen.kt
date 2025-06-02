@@ -54,8 +54,10 @@ fun CameraScreen(
         val previewUseCase = Preview.Builder()
             .setTargetAspectRatio(AspectRatio.RATIO_16_9)
             .build()
-            .also {
-                it.setSurfaceProvider(previewView.surfaceProvider)
+            .also { previewUseCase -> // Renamed 'it' to 'previewUseCase' for clarity
+                val mainSurfaceProvider = previewView.surfaceProvider
+                Log.d("CameraScreen", "Setting SurfaceProvider for main PreviewView. PreviewUseCase: $previewUseCase, SurfaceProvider: $mainSurfaceProvider, PreviewView: $previewView")
+                previewUseCase.setSurfaceProvider(mainSurfaceProvider)
             }
         viewModel.setPreviewUseCase(previewUseCase)
         viewModel.attachLifecycleOwner(lifecycleOwner)
