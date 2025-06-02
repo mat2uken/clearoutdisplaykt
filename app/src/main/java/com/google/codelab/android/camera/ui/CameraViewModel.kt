@@ -36,8 +36,12 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
 
     private var camera: androidx.camera.core.Camera? = null
     private var externalDisplayPresentation: ExternalDisplayPresentation? = null
-    private var previewUseCase: Preview? = null
+    // private var previewUseCase: Preview? = null // Replaced by _activePreviewUseCase
     private var currentLifecycleOwner: LifecycleOwner? = null
+
+    // --- Active Preview Use Case (managed by ViewModel now) ---
+    private val _activePreviewUseCase = MutableStateFlow<Preview?>(null)
+    val activePreviewUseCase: StateFlow<Preview?> = _activePreviewUseCase.asStateFlow()
 
     // --- Camera Selection ---
     private val _selectedLensFacing = MutableStateFlow(CameraSelector.LENS_FACING_BACK)
@@ -67,7 +71,7 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
     private val _externalDisplayDetailedInfo = MutableStateFlow<String?>(null)
     val externalDisplayDetailedInfo: StateFlow<String?> = _externalDisplayDetailedInfo.asStateFlow()
 
-    private val _externalDisplayRotationDegrees = MutableStateFlow(0) // Int for degrees
+    private val _externalDisplayRotationDegrees = MutableStateFlow(Surface.ROTATION_0) // Use Surface constants
     val externalDisplayRotationDegrees: StateFlow<Int> = _externalDisplayRotationDegrees.asStateFlow()
 
     private val _toastMessage = MutableStateFlow<String?>(null)
@@ -85,11 +89,11 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
         }
         displayListener = object : DisplayManager.DisplayListener {
             override fun onDisplayAdded(displayId: Int) {
-                Log.d("CameraViewModel", "Display $displayId added. Resetting external display rotation to 0.")
-                _externalDisplayRotationDegrees.value = 0 // Reset rotation for any new display
-                checkForExternalDisplays()
+                Log.d("CameraViewModel", "Display $displayId added. Resetting external display rotation to Surface.ROTATION_0.")
+                _externalDisplayRotationDegrees.value = Surface.ROTATION_0 // Reset rotation for any new display
+                checkForExternalDisplays() // This will call showExternalPresentation
                 _toastMessage.value = "External display connected"
-                // requestExternalDisplayInfo() // Already called in previous version, keep if still needed
+                requestExternalDisplayInfo()
             }
             override fun onDisplayRemoved(displayId: Int) {
                 checkForExternalDisplays()
@@ -104,24 +108,33 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     // --- Camera Control Functions ---
-    fun setPreviewUseCase(preview: Preview) {
-        Log.d("CameraViewModel", "New PreviewUseCase received: $preview. currentLifecycleOwner: $currentLifecycleOwner")
-        this.previewUseCase = preview
-        currentLifecycleOwner?.let { bindCameraUseCases(it) }
-    }
+    // fun setPreviewUseCase(preview: Preview) { // Removed
+    //     Log.d("CameraViewModel", "New PreviewUseCase received: $preview. currentLifecycleOwner: $currentLifecycleOwner")
+    //     this.previewUseCase = preview
+    //     currentLifecycleOwner?.let { bindCameraUseCases(it) }
+    // }
 
     fun attachLifecycleOwner(lifecycleOwner: LifecycleOwner) {
-        Log.d("CameraViewModel", "LifecycleOwner attached: $lifecycleOwner. previewUseCase: $previewUseCase")
+        Log.d("CameraViewModel", "LifecycleOwner attached: $lifecycleOwner.")
         currentLifecycleOwner = lifecycleOwner
-        if (previewUseCase != null && _cameraProviderFuture.isDone) {
+        if (_cameraProviderFuture.isDone) { // Check if camera provider is ready
             updateAvailableLenses() // Ensure lenses are checked before binding
-            bindCameraUseCases(lifecycleOwner)
+            bindCameraUseCases(lifecycleOwner) // Create and bind Preview here
+        } else {
+            // Listener on _cameraProviderFuture in init block will eventually call bind.
+            _cameraProviderFuture.addListener({
+                 Log.d("CameraViewModel", "CameraProvider ready via listener in attachLifecycleOwner. Binding use cases.")
+                 updateAvailableLenses()
+                 bindCameraUseCases(lifecycleOwner)
+            }, mainExecutor)
         }
     }
 
     fun detachLifecycleOwner() {
+        Log.d("CameraViewModel", "LifecycleOwner detached. Unbinding all and clearing active Preview.")
         currentLifecycleOwner = null
         cameraProvider.unbindAll()
+        _activePreviewUseCase.value = null
     }
 
     private fun updateAvailableLenses() {
@@ -163,41 +176,51 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
 
 
     private fun bindCameraUseCases(lifecycleOwner: LifecycleOwner) {
-        if (previewUseCase == null) {
-            _toastMessage.value = "Preview not ready for binding."
-            return
-        }
         if (!_cameraProviderFuture.isDone) {
-            _toastMessage.value = "CameraProvider not ready."
+            _toastMessage.value = "CameraProvider not ready for binding."
+            Log.w("CameraViewModel", "CameraProvider not ready for binding.")
+            // It's possible attachLifecycleOwner's listener will call this again when provider is ready.
             return
         }
+        Log.d("CameraViewModel", "bindCameraUseCases called. Unbinding all first.")
+        cameraProvider.unbindAll()
+        // Clear old preview use case's surface provider explicitly *before* nulling out the use case
+        _activePreviewUseCase.value?.setSurfaceProvider(null)
+        _activePreviewUseCase.value = null
+
+        Log.d("CameraViewModel", "Creating Preview use case with targetRotation: ${_externalDisplayRotationDegrees.value}")
+        val newPreview = Preview.Builder()
+            .setTargetRotation(_externalDisplayRotationDegrees.value)
+            .build()
+
+        _activePreviewUseCase.value = newPreview // Expose the new preview use case
 
         val cameraSelector = CameraSelector.Builder()
             .requireLensFacing(_selectedLensFacing.value)
             .build()
         try {
-            Log.d("CameraViewModel", "Binding camera use cases. Unbinding all first.")
-            cameraProvider.unbindAll()
-            Log.d("CameraViewModel", "Binding to lifecycle with selector: ${_selectedLensFacing.value} and preview: $previewUseCase")
+            Log.d("CameraViewModel", "Binding to lifecycle with selector: ${_selectedLensFacing.value}")
+            // The Preview object is now created here. CameraScreen will observe _activePreviewUseCase
+            // and set its own PreviewView's surfaceProvider.
             camera = cameraProvider.bindToLifecycle(
-                lifecycleOwner, // USE THE PASSED LIFECYCLE OWNER
+                lifecycleOwner,
                 cameraSelector,
-                previewUseCase
+                newPreview
             )
             Log.d("CameraViewModel", "Successfully bound to lifecycle. Camera: $camera")
             updateZoomLimits(camera?.cameraInfo)
-            // Initial zoom update
             setLinearZoom(_linearZoom.value)
 
+            // If an external display is active, immediately set its surface provider.
+            // CameraScreen will handle the main display's surface provider via observing _activePreviewUseCase.
             if (_isExternalDisplayConnected.value && externalDisplayPresentation != null) {
-                Log.d("CameraViewModel", "Attaching preview to external display's SurfaceProvider.")
-                previewUseCase?.setSurfaceProvider(externalDisplayPresentation!!.getPreviewView().surfaceProvider)
-            } else {
-                Log.d("CameraViewModel", "No external display, or presentation is null. Main screen's PreviewView should be active via CameraScreen.")
+                Log.d("CameraViewModel", "External display is connected, setting its SurfaceProvider on new Preview.")
+                newPreview.setSurfaceProvider(externalDisplayPresentation!!.getPreviewView().surfaceProvider)
             }
 
         } catch (exc: Exception) {
-            Log.e("CameraViewModel", "Failed to bind camera use cases", exc)
+            Log.e("CameraViewModel", "Failed to bind camera use cases with new preview", exc)
+            _activePreviewUseCase.value = null
             _toastMessage.value = "Failed to bind camera: ${exc.message}"
         }
     }

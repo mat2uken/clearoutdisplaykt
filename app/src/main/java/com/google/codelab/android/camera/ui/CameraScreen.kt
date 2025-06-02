@@ -54,6 +54,7 @@ fun CameraScreen(
     val isExternalDisplayConnected by viewModel.isExternalDisplayConnected.collectAsState()
     val toastMessage by viewModel.toastMessage.collectAsState()
     val externalDisplayInfo by viewModel.externalDisplayDetailedInfo.collectAsState()
+    val activePreview by viewModel.activePreviewUseCase.collectAsState() // Observe the Preview from ViewModel
 
     // For PreviewView
     val previewView = remember { PreviewView(context) }
@@ -68,23 +69,42 @@ fun CameraScreen(
     }
 
     // Lifecycle effect to manage camera binding via ViewModel
-    DisposableEffect(selectedLensFacing, lifecycleOwner, isExternalDisplayConnected) { // Re-run if lens, lifecycle owner or external display status changes
-        Log.d("CameraScreen", "DisposableEffect triggered. Lens: $selectedLensFacing, ExternalDisplay: $isExternalDisplayConnected, Lifecycle: $lifecycleOwner")
-        val previewUseCase = Preview.Builder()
-            .setTargetAspectRatio(AspectRatio.RATIO_16_9)
-            .build()
-            .also {
-                it.setSurfaceProvider(previewView.surfaceProvider)
-            }
-        viewModel.setPreviewUseCase(previewUseCase)
-        viewModel.attachLifecycleOwner(lifecycleOwner)
+    DisposableEffect(selectedLensFacing, lifecycleOwner) { // Re-run if lens or lifecycle owner changes
+        Log.d("CameraScreen", "DisposableEffect for attach/detach. Lens: $selectedLensFacing, Lifecycle: $lifecycleOwner")
+        viewModel.attachLifecycleOwner(lifecycleOwner) // ViewModel now handles Preview creation
 
         onDispose {
-            Log.d("CameraScreen", "DisposableEffect onDispose. Lens: $selectedLensFacing, ExternalDisplay: $isExternalDisplayConnected")
+            Log.d("CameraScreen", "DisposableEffect onDispose for attach/detach. Lens: $selectedLensFacing")
             viewModel.detachLifecycleOwner()
         }
     }
 
+    // LaunchedEffect to connect the PreviewView's surfaceProvider to the active Preview from ViewModel
+    LaunchedEffect(activePreview, previewView, isExternalDisplayConnected) {
+        val currentPreview = activePreview
+        if (currentPreview != null) {
+            if (isExternalDisplayConnected) {
+                // If an external display is connected, ViewModel is responsible for setting its surface provider.
+                // Clear the main screen's previewView from the CameraX Preview object to avoid conflicts.
+                // (Though CameraX might handle one surface at a time gracefully, this makes intent clear)
+                Log.d("CameraScreen", "External display connected. Clearing main PreviewView's surfaceProvider from active Preview object (if it was set).")
+                // It's typically not set directly on previewView but on the Preview object.
+                // If the ViewModel ensures only one surface is active on the Preview object, this might not be strictly needed.
+                // For safety, ensuring the main previewView is not the target when external is active:
+                // currentPreview.setSurfaceProvider(null) // This would detach ALL surfaces. Not what we want.
+                // Instead, rely on ViewModel to manage which surface is connected to the Preview object.
+                // If ViewModel sets external display's surface, this LaunchedEffect should not fight it for main screen.
+                // So, only set main screen's surface if no external display is active.
+            } else {
+                Log.d("CameraScreen", "No external display. Setting main PreviewView's surfaceProvider.")
+                currentPreview.setSurfaceProvider(previewView.surfaceProvider)
+            }
+        } else {
+            Log.d("CameraScreen", "activePreview is null. Main PreviewView's surfaceProvider cannot be set.")
+            // Potentially clear the surface from previewView if necessary, though usually it's managed by CameraX when Preview is unbound.
+            // previewView.surfaceProvider = null; // This is not how you clear it.
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         AndroidView(
