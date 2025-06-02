@@ -25,95 +25,105 @@ class ExternalDisplayPresentation(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.MATCH_PARENT
         )
-        frameLayout.addView(previewView) // Add previewView to frameLayout first
+        frameLayout.addView(previewView)
 
-        // Begin dynamic aspect ratio and rotation logic
+        // New FIT_CENTER based logic
         val displayMetrics = DisplayMetrics()
-        @Suppress("DEPRECATION") // getRealMetrics is deprecated but necessary for older APIs if not handled by WindowManager
+        @Suppress("DEPRECATION")
         display.getRealMetrics(displayMetrics)
-        val displayWidth = displayMetrics.widthPixels
-        val displayHeight = displayMetrics.heightPixels
+        var displayWidth = displayMetrics.widthPixels
+        var displayHeight = displayMetrics.heightPixels
 
         val cameraAspectRatio = 16.0 / 9.0
-        val displayAspectRatio = if (displayHeight > 0) displayWidth.toDouble() / displayHeight.toDouble() else 0.0
+        Log.d("ExternalDisplay", "Initial Display: ${displayWidth}x${displayHeight}, Camera AR: $cameraAspectRatio")
 
-        Log.d("ExternalDisplay", "Display: ${displayWidth}x${displayHeight} (AR: $displayAspectRatio), Camera AR: $cameraAspectRatio")
+        // Set default rotation and scale type
+        frameLayout.rotation = 0f
+        previewView.scaleType = PreviewView.ScaleType.FIT_CENTER
 
         if (displayWidth <= 0 || displayHeight <= 0) {
-            Log.w("ExternalDisplay", "Invalid display dimensions. Defaulting to FIT_CENTER.")
-            previewView.scaleType = PreviewView.ScaleType.FIT_CENTER
-            frameLayout.rotation = 0f
-        } else if (displayAspectRatio >= 1.0) { // Landscape-ish or square display
-            if (displayAspectRatio >= cameraAspectRatio) {
-                previewView.scaleType = PreviewView.ScaleType.FILL_CENTER // Fills height, crops width
-                Log.d("ExternalDisplay", "Display is wider or same AR as camera. Using FILL_CENTER.")
-            } else { // displayAspectRatio < cameraAspectRatio
-                previewView.scaleType = PreviewView.ScaleType.FILL_CENTER // Fills width, crops height
-                Log.d("ExternalDisplay", "Display is narrower than camera (but landscape/square). Using FILL_CENTER.")
+            Log.w("ExternalDisplay", "Invalid display dimensions. Using FIT_CENTER with no rotation.")
+            // Defaults already set, so just log and proceed to set content view
+        } else {
+            // Calculate scaled dimensions and area for NO rotation
+            var nonRotatedPreviewWidth: Double
+            var nonRotatedPreviewHeight: Double
+            val displayAr = displayWidth.toDouble() / displayHeight.toDouble()
+
+            if (displayAr > cameraAspectRatio) { // Display is wider than camera -> letterbox
+                nonRotatedPreviewHeight = displayHeight.toDouble()
+                nonRotatedPreviewWidth = nonRotatedPreviewHeight * cameraAspectRatio
+            } else { // Display is narrower or same AR as camera -> pillarbox or perfect fit
+                nonRotatedPreviewWidth = displayWidth.toDouble()
+                nonRotatedPreviewHeight = nonRotatedPreviewWidth / cameraAspectRatio
             }
-            frameLayout.rotation = 0f
-        } else { // Portrait-ish display (displayAspectRatio < 1.0)
-            // Scenario 1: No rotation
-            // Scale type will be FILL_CENTER. This will fill display width, crop camera height.
-            val cameraHeightForDisplayWidth = displayWidth / cameraAspectRatio
-            val croppedHeightNoRotation = cameraHeightForDisplayWidth - displayHeight
-            val percentCroppedNoRotation = if (cameraHeightForDisplayWidth > 0) croppedHeightNoRotation / cameraHeightForDisplayWidth else 0.0
+            val areaNoRotation = nonRotatedPreviewWidth * nonRotatedPreviewHeight
+            Log.d("ExternalDisplay", "No rotation: Preview ${String.format("%.0f", nonRotatedPreviewWidth)}x${String.format("%.0f", nonRotatedPreviewHeight)}, Area: ${String.format("%.0f", areaNoRotation)}")
 
-            // Scenario 2: With 90-degree rotation
-            val effectiveDisplayWidth = displayHeight // becomes width for camera
-            val effectiveDisplayHeight = displayWidth  // becomes height for camera
-            val rotatedDisplayAspectRatio = if (effectiveDisplayHeight > 0) effectiveDisplayWidth.toDouble() / effectiveDisplayHeight.toDouble() else 0.0
+            // Calculate scaled dimensions and area FOR 90-degree ROTATION
+            val rotatedDisplayEffWidth = displayHeight // Effective display width for camera is original display height
+            val rotatedDisplayEffHeight = displayWidth  // Effective display height for camera is original display width
+            var rotatedPreviewWidth: Double
+            var rotatedPreviewHeight: Double
+            // Avoid division by zero if rotatedDisplayEffHeight is 0 (e.g. displayWidth was 0)
+            val rotatedDisplayAr = if (rotatedDisplayEffHeight > 0) rotatedDisplayEffWidth.toDouble() / rotatedDisplayEffHeight.toDouble() else 0.0
 
-            var percentCroppedWithRotation = 1.0 // Default to max crop
-
-            if (effectiveDisplayHeight > 0 && effectiveDisplayWidth > 0) {
-                if (rotatedDisplayAspectRatio >= cameraAspectRatio) {
-                    // Rotated display is wider or same AR. Fill effective height (orig width), crop effective width (orig height).
-                    val cameraWidthForEffectiveDisplayHeight = effectiveDisplayHeight * cameraAspectRatio
-                    val croppedWidthWithRotation = cameraWidthForEffectiveDisplayHeight - effectiveDisplayWidth
-                    percentCroppedWithRotation = if (cameraWidthForEffectiveDisplayHeight > 0) croppedWidthWithRotation / cameraWidthForEffectiveDisplayHeight else 0.0
-                } else {
-                    // Rotated display is narrower. Fill effective width (orig height), crop effective height (orig width).
-                    val cameraHeightForEffectiveDisplayWidth = effectiveDisplayWidth / cameraAspectRatio
-                    val croppedHeightWithRotation = cameraHeightForEffectiveDisplayWidth - effectiveDisplayHeight
-                    percentCroppedWithRotation = if (cameraHeightForEffectiveDisplayWidth > 0) croppedHeightWithRotation / cameraHeightForEffectiveDisplayWidth else 0.0
-                }
-            }
-
-            Log.d("ExternalDisplay", "Portrait: No rotation crop %: $percentCroppedNoRotation, With rotation crop %: $percentCroppedWithRotation")
-
-            val rotationThreshold = 0.75 // Max acceptable crop percentage when choosing rotation
-            if (percentCroppedWithRotation < percentCroppedNoRotation && percentCroppedWithRotation < rotationThreshold) {
-                Log.d("ExternalDisplay", "Applying 90-degree rotation for portrait display.")
-                frameLayout.rotation = 90f
-                previewView.scaleType = PreviewView.ScaleType.FILL_CENTER
+            if (rotatedDisplayEffWidth <= 0 || rotatedDisplayEffHeight <= 0) { // Should not happen if initial check passed, but good for safety
+                 rotatedPreviewWidth = 0.0
+                 rotatedPreviewHeight = 0.0
+            } else if (rotatedDisplayAr > cameraAspectRatio) {
+                rotatedPreviewHeight = rotatedDisplayEffHeight.toDouble()
+                rotatedPreviewWidth = rotatedPreviewHeight * cameraAspectRatio
             } else {
-                Log.d("ExternalDisplay", "Not rotating for portrait display. Using FILL_CENTER.")
+                rotatedPreviewWidth = rotatedDisplayEffWidth.toDouble()
+                rotatedPreviewHeight = rotatedPreviewWidth / cameraAspectRatio
+            }
+            val areaWithRotation = rotatedPreviewWidth * rotatedPreviewHeight
+            Log.d("ExternalDisplay", "With 90deg rotation: Preview ${String.format("%.0f", rotatedPreviewWidth)}x${String.format("%.0f", rotatedPreviewHeight)}, Area: ${String.format("%.0f", areaWithRotation)} (original display ${displayWidth}x${displayHeight} considered as ${rotatedDisplayEffWidth}x${rotatedDisplayEffHeight} for preview)")
+
+            // Compare areas only if display is portrait (height > width)
+            if (displayHeight > displayWidth) { // Portrait display
+                if (areaWithRotation > areaNoRotation) {
+                    Log.d("ExternalDisplay", "Portrait display: Rotation provides larger preview area. Applying 90-degree rotation.")
+                    frameLayout.rotation = 90f
+                } else {
+                    Log.d("ExternalDisplay", "Portrait display: No rotation provides larger or equal preview area.")
+                    frameLayout.rotation = 0f // Ensure it's reset
+                }
+            } else { // Landscape or square display
+                Log.d("ExternalDisplay", "Landscape/Square display: No rotation chosen.")
                 frameLayout.rotation = 0f
-                previewView.scaleType = PreviewView.ScaleType.FILL_CENTER
             }
         }
 
+        // Explicitly set scale type (already default, but for clarity per instruction)
+        previewView.scaleType = PreviewView.ScaleType.FIT_CENTER
+        Log.d("ExternalDisplay", "Applied ScaleType: FIT_CENTER, Rotation: ${frameLayout.rotation} degrees")
+
+        // Adjust PreviewView layout parameters if rotation is applied
         if (frameLayout.rotation == 90f || frameLayout.rotation == 270f) {
             val pLayoutParams = previewView.layoutParams
-            // Check if parent is FrameLayout to safely cast
-            if (pLayoutParams is FrameLayout.LayoutParams) {
-                 // Swap width and height for PreviewView because the parent FrameLayout is rotated
-                pLayoutParams.width = displayHeight
-                pLayoutParams.height = displayWidth
-                previewView.layoutParams = pLayoutParams
-                Log.d("ExternalDisplay", "Adjusted PreviewView layout params for rotation: ${pLayoutParams.width}x${pLayoutParams.height}")
+            // Check if params actually need changing to avoid unnecessary layout pass
+            if (pLayoutParams.width != displayHeight || pLayoutParams.height != displayWidth) {
+                 pLayoutParams.width = displayHeight // Fill the new 'width' of FrameLayout (which is original displayHeight)
+                 pLayoutParams.height = displayWidth  // Fill the new 'height' of FrameLayout (which is original displayWidth)
+                 previewView.layoutParams = pLayoutParams
+                 Log.d("ExternalDisplay", "Adjusted PreviewView layout params for rotation: ${pLayoutParams.width}x${pLayoutParams.height}")
             } else {
-                 Log.w("ExternalDisplay", "Could not adjust PreviewView layout params: not FrameLayout.LayoutParams")
-                 // Fallback or alternative adjustment might be needed if parent isn't a FrameLayout or if this doesn't work.
-                 // For now, we assume previewView is directly in frameLayout which has MATCH_PARENT.
-                 // The rotation of frameLayout should make previewView (MATCH_PARENT) adapt,
-                 // but explicitly setting dimensions for the rotated view can be more robust.
-                 // If MATCH_PARENT on PreviewView works as expected within a rotated FrameLayout,
-                 // this explicit adjustment might not be strictly necessary but acts as a safeguard.
+                 Log.d("ExternalDisplay", "PreviewView layout params already match rotated dimensions.")
+            }
+        } else {
+            // If not rotated, ensure MATCH_PARENT is used if it was changed.
+            // PreviewView is initialized with MATCH_PARENT. This block ensures it stays that way
+            // if any prior logic might have set specific dimensions.
+            val pLayoutParams = previewView.layoutParams
+            if (pLayoutParams.width != ViewGroup.LayoutParams.MATCH_PARENT || pLayoutParams.height != ViewGroup.LayoutParams.MATCH_PARENT) {
+                 pLayoutParams.width = ViewGroup.LayoutParams.MATCH_PARENT
+                 pLayoutParams.height = ViewGroup.LayoutParams.MATCH_PARENT
+                 previewView.layoutParams = pLayoutParams
+                 Log.d("ExternalDisplay", "Reset PreviewView layout params to MATCH_PARENT for no rotation.")
             }
         }
-        // setContentView must be called after frameLayout is fully configured, including rotation and its children.
         setContentView(frameLayout)
     }
 
