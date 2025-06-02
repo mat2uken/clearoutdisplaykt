@@ -18,6 +18,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.Observer // Added for LiveData
 import androidx.lifecycle.viewModelScope
 import com.google.codelab.android.camera.ExternalDisplayPresentation
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -197,18 +198,17 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
             .setTargetRotation(_externalDisplayRotationDegrees.value)
             .build()
 
-        // Add listener for resolution updates
-        newPreview.resolutionInfoObservable.addListener({
-            val resolutionInfo = newPreview.resolutionInfo
+        // Observe LiveData for resolution updates
+        newPreview.resolutionInfoLiveData.observe(lifecycleOwner, Observer { resolutionInfo ->
             if (resolutionInfo != null) {
                 val size = resolutionInfo.resolution
                 _cameraOutputResolution.value = "PreviewRes: ${size.width}x${size.height} (Rot:${resolutionInfo.rotationDegrees}°)"
-                Log.d("CameraViewModel", "Preview resolution updated: ${_cameraOutputResolution.value}")
+                Log.d("CameraViewModel", "Preview resolution updated via LiveData: ${_cameraOutputResolution.value}")
             } else {
-                _cameraOutputResolution.value = "PreviewRes: N/A (Info not available)"
-                Log.d("CameraViewModel", "Preview resolutionInfo is null.")
+                _cameraOutputResolution.value = "PreviewRes: N/A (Info not available via LiveData)"
+                Log.d("CameraViewModel", "Preview resolutionInfo from LiveData is null.")
             }
-        }, ContextCompat.getMainExecutor(getApplication()))
+        })
 
         _activePreviewUseCase.value = newPreview // Expose the new preview use case
 
