@@ -67,6 +67,9 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
     private val _externalDisplayDetailedInfo = MutableStateFlow<String?>(null)
     val externalDisplayDetailedInfo: StateFlow<String?> = _externalDisplayDetailedInfo.asStateFlow()
 
+    private val _externalDisplayRotationDegrees = MutableStateFlow(0) // Int for degrees
+    val externalDisplayRotationDegrees: StateFlow<Int> = _externalDisplayRotationDegrees.asStateFlow()
+
     private val _toastMessage = MutableStateFlow<String?>(null)
     val toastMessage: StateFlow<String?> = _toastMessage.asStateFlow()
 
@@ -82,8 +85,11 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
         }
         displayListener = object : DisplayManager.DisplayListener {
             override fun onDisplayAdded(displayId: Int) {
+                Log.d("CameraViewModel", "Display $displayId added. Resetting external display rotation to 0.")
+                _externalDisplayRotationDegrees.value = 0 // Reset rotation for any new display
                 checkForExternalDisplays()
                 _toastMessage.value = "External display connected"
+                // requestExternalDisplayInfo() // Already called in previous version, keep if still needed
             }
             override fun onDisplayRemoved(displayId: Int) {
                 checkForExternalDisplays()
@@ -236,24 +242,86 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private fun showExternalPresentation(display: Display) {
-        if (externalDisplayPresentation == null || externalDisplayPresentation?.display?.displayId != display.displayId) {
-            dismissExternalPresentation() // Dismiss any existing one
-            externalDisplayPresentation = ExternalDisplayPresentation(getApplication(), display)
-            Log.d("CameraViewModel", "Showing external presentation on display: ${display.displayId}")
-            externalDisplayPresentation?.show()
-            // If previewUseCase is ready, connect it to the external display's PreviewView
-            previewUseCase?.setSurfaceProvider(externalDisplayPresentation?.getPreviewView()?.surfaceProvider)
-            Log.d("CameraViewModel", "Set surface provider for external display's PreviewView.")
+        // Dismiss any existing presentation if it's for a different display or if current one is simply non-null
+        // This check ensures we only proceed if we're truly setting up for 'display'
+        // or if there's no current presentation.
+        if (externalDisplayPresentation != null && externalDisplayPresentation?.display?.displayId != display.displayId) {
+            dismissExternalPresentation(isPartOfRotationSequence = false) // It's a new display, so not part of rotation for old one
+        } else if (externalDisplayPresentation != null && externalDisplayPresentation?.display?.displayId == display.displayId) {
+            // This means we are "showing" the same display again, likely after a rotation.
+            // The old presentation instance for this display was already dismissed by rotateExternalDisplay()
+            // with isPartOfRotationSequence = true.
+            // So, externalDisplayPresentation should be null here if called from rotateExternalDisplay.
+            // If it's not null, it means something else called showExternalPresentation for the same display
+            // without dismissing. This shouldn't typically happen with current logic.
+            // For safety, dismiss it if it exists and we are trying to "show" it again.
+             Log.w("CameraViewModel", "showExternalPresentation called for the same display that's supposedly active. Dismissing first.")
+             dismissExternalPresentation(isPartOfRotationSequence = false) // Treat as a reset if this path is hit unexpectedly
         }
+
+
+        // At this point, externalDisplayPresentation should be null, or we are about to replace it.
+        // The _externalDisplayRotationDegrees.value is either 0 (for a new display via onDisplayAdded)
+        // or the value set by rotateExternalDisplay().
+        externalDisplayPresentation = ExternalDisplayPresentation(
+            getApplication(),
+            display,
+            _externalDisplayRotationDegrees.value // Pass the current rotation state
+        )
+        Log.d("CameraViewModel", "Showing external presentation on display: ${display.displayId} with intended rotation: ${_externalDisplayRotationDegrees.value}°.")
+        externalDisplayPresentation?.show()
+        previewUseCase?.setSurfaceProvider(externalDisplayPresentation?.getPreviewView()?.surfaceProvider)
+        Log.d("CameraViewModel", "Set surface provider for external display's PreviewView.")
+        requestExternalDisplayInfo() // Request info when presentation is shown
     }
 
-    private fun dismissExternalPresentation() {
+    private fun dismissExternalPresentation(isPartOfRotationSequence: Boolean = false) {
         externalDisplayPresentation?.dismiss()
         previewUseCase?.setSurfaceProvider(null) // Null out the surface provider
-        Log.d("CameraViewModel", "External presentation dismissed, old surface provider nulled. CameraScreen will drive refresh.")
+        Log.d("CameraViewModel", "External presentation dismissed. Part of rotation: $isPartOfRotationSequence")
         externalDisplayPresentation = null
         clearExternalDisplayInfo() // Clear detailed info when presentation is dismissed
+        if (!isPartOfRotationSequence) {
+            _externalDisplayRotationDegrees.value = 0
+            Log.d("CameraViewModel", "Rotation reset to 0 (not part of rotation sequence).")
+        }
         // DO NOT REBIND HERE - CameraScreen's DisposableEffect will handle it if isExternalDisplayConnected changes
+    }
+
+    fun rotateExternalDisplay() {
+        val currentRotationDegrees = _externalDisplayRotationDegrees.value
+        val newRotationDegrees = (currentRotationDegrees + 90) % 360
+        _externalDisplayRotationDegrees.value = newRotationDegrees // Set the new desired rotation
+
+        Log.d("CameraViewModel", "Rotate external display requested. New rotation: $newRotationDegrees degrees.")
+
+        val currentDisplay = externalDisplayPresentation?.display
+        if (isExternalDisplayConnected.value && currentDisplay != null) {
+            // We have an active presentation on a display.
+            // Dismiss it (signaling it's part of rotation so rotation state isn't zeroed)
+            // and then show it again (it will pick up the new _externalDisplayRotationDegrees value).
+            dismissExternalPresentation(isPartOfRotationSequence = true)
+            showExternalPresentation(currentDisplay) // This will use the new _externalDisplayRotationDegrees
+            _toastMessage.value = "External display rotated to $newRotationDegrees°"
+        } else if (isExternalDisplayConnected.value) {
+            // A display is connected, but no presentation is currently active.
+            Log.d("CameraViewModel", "Rotate requested: Display connected, but no active presentation. Attempting to show new one.")
+            val displays = displayManager.getDisplays(DisplayManager.DISPLAY_CATEGORY_PRESENTATION)
+            if (displays.isNotEmpty()) {
+                // _externalDisplayRotationDegrees is already set to newRotationDegrees.
+                // showExternalPresentation will use this value.
+                showExternalPresentation(displays[0])
+                _toastMessage.value = "External display shown with $newRotationDegrees° rotation."
+            } else {
+                Log.e("CameraViewModel", "Rotate requested: isExternalDisplayConnected true, but no displays found by DisplayManager.")
+                _toastMessage.value = "Error: No display found to rotate."
+                _externalDisplayRotationDegrees.value = currentRotationDegrees // Revert to old rotation
+            }
+        } else {
+            Log.d("CameraViewModel", "Rotate requested: No external display connected.")
+            _toastMessage.value = "No external display to rotate."
+             _externalDisplayRotationDegrees.value = currentRotationDegrees // Revert to old rotation as action failed
+        }
     }
 
     fun requestExternalDisplayInfo() {

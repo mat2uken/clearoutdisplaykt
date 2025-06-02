@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.RotateRight
 import androidx.compose.material.icons.filled.Cameraswitch
 import androidx.compose.material.icons.filled.Tv // Using Tv icon for external display
 import androidx.compose.material3.AlertDialog
@@ -140,7 +141,23 @@ fun CameraScreen(
                     Spacer(modifier = Modifier.weight(1f)) // Keep spacing if no switch
                 }
 
-                // External Display Indicator
+                // New Rotate External Display Button
+                if (isExternalDisplayConnected) {
+                    IconButton(onClick = {
+                        Log.d("CameraScreen", "Rotate external display button clicked")
+                        viewModel.rotateExternalDisplay()
+                    }) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.RotateRight,
+                            contentDescription = "Rotate External Display",
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer // Consistent with camera switch
+                        )
+                    }
+                } else {
+                     Spacer(modifier = Modifier.weight(1f)) // Occupy space if no rotate button
+                }
+
+                // External Display Indicator / Info Button (TV icon)
                 if (isExternalDisplayConnected) {
                     IconButton(onClick = {
                         Log.d("CameraScreen", "External display icon clicked, requesting info.")
@@ -149,14 +166,11 @@ fun CameraScreen(
                         Icon(
                             imageVector = Icons.Filled.Tv,
                             contentDescription = "External Display Connected - Show Info",
-                            tint = MaterialTheme.colorScheme.primary
+                            tint = MaterialTheme.colorScheme.primary // Keep primary for info
                         )
                     }
                 } else {
-                    // Occupy space if not connected to maintain layout balance
-                    // If the IconButton above takes specific space, this Spacer might need adjustment
-                    // For now, assuming IconButton doesn't use weight, so this Spacer is for balance with camera switch.
-                    Spacer(modifier = Modifier.weight(1f))
+                    Spacer(modifier = Modifier.weight(1f)) // Occupy space if no TV icon
                 }
             }
         }

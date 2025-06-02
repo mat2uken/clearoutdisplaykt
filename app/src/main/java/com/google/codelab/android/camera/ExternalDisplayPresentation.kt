@@ -12,7 +12,8 @@ import androidx.camera.view.PreviewView
 
 class ExternalDisplayPresentation(
     outerContext: Context,
-    display: Display
+    display: Display,
+    val initialRotationDegrees: Int // New parameter
 ) : Presentation(outerContext, display) {
 
     private lateinit var previewView: PreviewView
@@ -37,69 +38,43 @@ class ExternalDisplayPresentation(
         )
         frameLayout.addView(previewView)
 
-        // New FIT_CENTER based logic
-        val displayMetrics = DisplayMetrics()
-        @Suppress("DEPRECATION")
-        display.getRealMetrics(displayMetrics)
-        var displayWidth = displayMetrics.widthPixels
-        var displayHeight = displayMetrics.heightPixels
-        Log.d("ExternalDisplay", "Raw Display Metrics: Width=$displayWidth, Height=$displayHeight")
+        // Get physical display metrics
+        val physicalDisplayMetrics = DisplayMetrics()
+        @Suppress("DEPRECATION") // display.getRealMetrics is deprecated but needed.
+        display.getRealMetrics(physicalDisplayMetrics)
+        val physicalDisplayWidth = physicalDisplayMetrics.widthPixels
+        val physicalDisplayHeight = physicalDisplayMetrics.heightPixels
+        Log.d("ExternalDisplay", "Physical Display: ${physicalDisplayWidth}x${physicalDisplayHeight}. Initial Rotation from ViewModel: $initialRotationDegrees deg.")
 
-        val displayCategory = if (displayWidth >= displayHeight) "Landscape/Square" else "Portrait"
-        Log.d("ExternalDisplay", "Detected Display Category: $displayCategory")
+        // Apply rotation to FrameLayout based on initialRotationDegrees from ViewModel
+        frameLayout.rotation = initialRotationDegrees.toFloat()
+        Log.d("ExternalDisplay", "Applied rotation ${frameLayout.rotation} deg to FrameLayout.")
 
-        val cameraAspectRatio = 16.0 / 9.0
-        // The "Initial Display" log below is slightly redundant with "Raw Display Metrics" but also shows Camera AR.
-        // Keeping it for now as per current task focused on adding, not removing/refactoring existing logs.
-        Log.d("ExternalDisplay", "Initial Display: ${displayWidth}x${displayHeight}, Camera AR: $cameraAspectRatio")
-
-        // Configure PreviewView and FrameLayout based on determined displayCategory
-        if (displayWidth <= 0 || displayHeight <= 0) {
-            Log.w("ExternalDisplay", "Invalid display dimensions. Defaulting to FIT_CENTER and no rotation.")
-            frameLayout.rotation = 0f
-            previewView.scaleType = PreviewView.ScaleType.FIT_CENTER
-            // Ensure PreviewView layout params are MATCH_PARENT (should be default)
-            val pLayoutParams = previewView.layoutParams
-            if (pLayoutParams.width != ViewGroup.LayoutParams.MATCH_PARENT || pLayoutParams.height != ViewGroup.LayoutParams.MATCH_PARENT) {
-                pLayoutParams.width = ViewGroup.LayoutParams.MATCH_PARENT
-                pLayoutParams.height = ViewGroup.LayoutParams.MATCH_PARENT
-                previewView.layoutParams = pLayoutParams
-            }
-        } else if (displayCategory == "Landscape/Square") {
-            Log.d("ExternalDisplay", "Applying Landscape/Square strategy.")
-            frameLayout.rotation = 0f
-
-            // Explicitly set PreviewView dimensions
-            val pLayoutParams = previewView.layoutParams
-            if (pLayoutParams.width != displayWidth || pLayoutParams.height != displayHeight) {
-                pLayoutParams.width = displayWidth
-                pLayoutParams.height = displayHeight
-                previewView.layoutParams = pLayoutParams
-                Log.d("ExternalDisplay", "Explicitly set PreviewView layout to ${displayWidth}x${displayHeight} for Landscape.")
-            } else {
-                Log.d("ExternalDisplay", "PreviewView layout already ${displayWidth}x${displayHeight} for Landscape.")
-            }
-            previewView.scaleType = PreviewView.ScaleType.FIT_CENTER // Should remain FIT_CENTER
-            Log.d("ExternalDisplay", "Landscape/Square: Rotation=0, ScaleType=FIT_CENTER, Layout=${displayWidth}x${displayHeight}.")
-
-        } else { // Portrait
-            Log.d("ExternalDisplay", "Applying Portrait strategy.")
-            frameLayout.rotation = 90f
-
-            val pLayoutParams = previewView.layoutParams
-            // Set specific dimensions for PreviewView to fill the rotated FrameLayout
-            // Check if params actually need changing to avoid unnecessary layout pass
-            if (pLayoutParams.width != displayHeight || pLayoutParams.height != displayWidth) {
-                pLayoutParams.width = displayHeight // Rotated FrameLayout's new width is original display height
-                pLayoutParams.height = displayWidth  // Rotated FrameLayout's new height is original display width
-                previewView.layoutParams = pLayoutParams
-                Log.d("ExternalDisplay", "Adjusted PreviewView layout params for rotation: ${pLayoutParams.width}x${pLayoutParams.height}")
-            } else {
-                Log.d("ExternalDisplay", "PreviewView layout params already match rotated dimensions for Portrait.")
-            }
-            previewView.scaleType = PreviewView.ScaleType.FIT_CENTER
-            Log.d("ExternalDisplay", "Portrait: Rotation=90, ScaleType=FIT_CENTER, Layout=${pLayoutParams.width}x${pLayoutParams.height}.")
+        // Set PreviewView Layout Parameters based on physical dimensions and FrameLayout's rotation
+        val pLayoutParams = previewView.layoutParams // Get existing params (should be MATCH_PARENT initially)
+        if (initialRotationDegrees == 90 || initialRotationDegrees == 270) {
+            // When FrameLayout is rotated 90/270, its 'width' for children (like PreviewView)
+            // effectively corresponds to the display's physical height, and its 'height' to physical width.
+            // PreviewView (MATCH_PARENT) should fill this new coordinate system.
+            // So we give PreviewView explicit dimensions that are swapped relative to physical display.
+            pLayoutParams.width = physicalDisplayHeight
+            pLayoutParams.height = physicalDisplayWidth
+            Log.d("ExternalDisplay", "PreviewView target layout for 90/270 rot: ${pLayoutParams.width}x${pLayoutParams.height} (fills rotated FrameLayout)")
+        } else { // 0 or 180 degrees
+            // FrameLayout's coordinate system aligns with physical display.
+            // PreviewView (MATCH_PARENT) should fill this.
+            // So we give PreviewView explicit dimensions matching physical display.
+            pLayoutParams.width = physicalDisplayWidth
+            pLayoutParams.height = physicalDisplayHeight
+            Log.d("ExternalDisplay", "PreviewView target layout for 0/180 rot: ${pLayoutParams.width}x${pLayoutParams.height} (fills FrameLayout)")
         }
+        previewView.layoutParams = pLayoutParams // Apply the modified params
+        Log.d("ExternalDisplay", "Applied PreviewView layout params: width=${pLayoutParams.width}, height=${pLayoutParams.height}")
+
+        // Set ScaleType for PreviewView
+        previewView.scaleType = PreviewView.ScaleType.FIT_CENTER
+        Log.d("ExternalDisplay", "Set PreviewView ScaleType to FIT_CENTER.")
+
         setContentView(frameLayout)
     }
 
