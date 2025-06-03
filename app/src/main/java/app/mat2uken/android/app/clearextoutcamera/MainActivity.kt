@@ -141,32 +141,43 @@ fun CameraScreen(cameraManager: CameraManager, lifecycleOwner: LifecycleOwner) {
 
 @Composable
 fun ZoomControl(cameraManager: CameraManager) {
-    val zoomState by cameraManager.getZoomState()?.observeAsState()
-    val zoomRatioRange = zoomState?.zoomRatioRange ?: 0f..1f // Default if null
-    var currentZoomRatio by remember(zoomState?.zoomRatio) { mutableFloatStateOf(zoomState?.zoomRatio ?: zoomRatioRange.start) }
+    // Explicitly use observeAsState and handle its nullable State result.
+    // cameraManager.getZoomState() returns LiveData<ZoomState>?
+    // zoomStateObserved will be State<ZoomState?>? (State of a nullable ZoomState, if LiveData is not null)
+    val zoomStateObserved: State<ZoomState?>? = cameraManager.getZoomState()?.observeAsState(initial = null)
 
-    // Update currentZoomRatio when zoomState changes from external factors (e.g. pinch-to-zoom)
-    LaunchedEffect(zoomState?.zoomRatio) {
-        zoomState?.zoomRatio?.let { currentZoomRatio = it }
+    // Get the actual ZoomState object from the observed State.
+    val actualZoomState: ZoomState? = zoomStateObserved?.value
+
+    val zoomRatioRange = actualZoomState?.zoomRatioRange ?: 0f..1f // Default if zoomState or its range is null
+
+    // This 'currentSliderPosition' is the mutable state for the Slider, initialized from observed state or default.
+    var currentSliderPosition by remember { mutableFloatStateOf(actualZoomState?.zoomRatio ?: zoomRatioRange.start) }
+
+    // Effect to update the slider's position if the underlying LiveData (actualZoomState?.zoomRatio) changes.
+    LaunchedEffect(actualZoomState?.zoomRatio) {
+        actualZoomState?.zoomRatio?.let { newRatioFromLiveData ->
+            if (currentSliderPosition != newRatioFromLiveData) { // Avoid recomposition loop if already in sync
+                currentSliderPosition = newRatioFromLiveData
+            }
+        }
     }
 
     Text("Zoom", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
-    // Display the current zoom ratio value
+    // Display the current zoom ratio value using the slider's current position
     Text(
-        text = "Current Ratio: ${String.format("%.2f", currentZoomRatio)}x",
+        text = "Current Ratio: ${String.format("%.2f", currentSliderPosition)}x",
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurface,
-        modifier = Modifier.padding(start = 8.dp) // Add some padding for better appearance
+        modifier = Modifier.padding(start = 8.dp)
     )
     Slider(
-        value = currentZoomRatio,
-        // Ensuring the lambda parameter is explicitly named, which it already is.
-        // This change is effectively a no-op to confirm the existing correct structure.
-        onValueChange = { updatedZoomValue ->
-            currentZoomRatio = updatedZoomValue
-            cameraManager.setZoomRatio(updatedZoomValue)
+        value = currentSliderPosition, // Slider's value is bound to our mutable state
+        onValueChange = { newSliderValue ->
+            currentSliderPosition = newSliderValue // Update local UI state immediately
+            cameraManager.setZoomRatio(newSliderValue) // Propagate change to CameraManager
         },
-        valueRange = zoomRatioRange,
+        valueRange = zoomRatioRange, // Use the calculated or default range
         modifier = Modifier.fillMaxWidth()
     )
 }
