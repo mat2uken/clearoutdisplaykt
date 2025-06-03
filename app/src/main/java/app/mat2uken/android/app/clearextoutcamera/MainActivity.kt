@@ -152,13 +152,17 @@ fun ZoomControl(cameraManager: CameraManager) {
 
     val zoomRatioRange = actualZoomState?.zoomRatioRange ?: 0f..1f // Default if zoomState or its range is null
 
-    // This 'currentSliderPosition' is the mutable state for the Slider, initialized from observed state or default.
-    var currentSliderPosition by remember { mutableFloatStateOf(actualZoomState?.zoomRatio ?: zoomRatioRange.start) }
+    // This 'currentSliderPosition' is the mutable state for the Slider.
+    // Initialize with actualZoomState?.zoomRatio or fallback to zoomRatioRange.start.
+    // Keys for remember ensure re-initialization if the underlying camera's zoom parameters change.
+    var currentSliderPosition by remember(actualZoomState?.zoomRatio, zoomRatioRange.start) {
+        mutableFloatStateOf(actualZoomState?.zoomRatio ?: zoomRatioRange.start)
+    }
 
     // Effect to update the slider's position if the underlying LiveData (actualZoomState?.zoomRatio) changes.
     LaunchedEffect(actualZoomState?.zoomRatio) { // Ensuring lambda takes no parameters, which it already does.
         actualZoomState?.zoomRatio?.let { newRatioFromLiveData ->
-            if (currentSliderPosition != newRatioFromLiveData) { // Avoid recomposition loop if already in sync
+            if (currentSliderPosition != newRatioFromLiveData) { // Avoid re-setting if already same
                 currentSliderPosition = newRatioFromLiveData
             }
         }
