@@ -16,13 +16,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.verticalScroll // Keep for potential future use, though not strictly needed by this simplified version.
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cameraswitch
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Tv // Using Tv icon for external display
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
+// import androidx.compose.material.icons.filled.Refresh // Removed
+// import androidx.compose.material.icons.filled.Tv // Removed
+// import androidx.compose.material3.AlertDialog // Removed
+// import androidx.compose.material3.Button // Removed, unless used elsewhere
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -51,9 +51,9 @@ fun CameraScreen(
     val linearZoom by viewModel.linearZoom.collectAsState() // Slider position (0f-1f)
     val minZoom by viewModel.minZoomRatio.collectAsState()
     val maxZoom by viewModel.maxZoomRatio.collectAsState()
-    val isExternalDisplayConnected by viewModel.isExternalDisplayConnected.collectAsState()
+    // val isExternalDisplayConnected by viewModel.isExternalDisplayConnected.collectAsState() // Removed
     val toastMessage by viewModel.toastMessage.collectAsState()
-    val externalDisplayInfo by viewModel.externalDisplayDetailedInfo.collectAsState()
+    // val externalDisplayInfo by viewModel.externalDisplayDetailedInfo.collectAsState() // Removed
     val activePreview by viewModel.activePreviewUseCase.collectAsState() // Observe the Preview from ViewModel
 
     // For PreviewView
@@ -80,30 +80,11 @@ fun CameraScreen(
     }
 
     // LaunchedEffect to connect the PreviewView's surfaceProvider to the active Preview from ViewModel
-    LaunchedEffect(activePreview, previewView, isExternalDisplayConnected) {
-        val currentPreview = activePreview
-        if (currentPreview != null) {
-            if (isExternalDisplayConnected) {
-                // If an external display is connected, ViewModel is responsible for setting its surface provider.
-                // Clear the main screen's previewView from the CameraX Preview object to avoid conflicts.
-                // (Though CameraX might handle one surface at a time gracefully, this makes intent clear)
-                Log.d("CameraScreen", "External display connected. Clearing main PreviewView's surfaceProvider from active Preview object (if it was set).")
-                // It's typically not set directly on previewView but on the Preview object.
-                // If the ViewModel ensures only one surface is active on the Preview object, this might not be strictly needed.
-                // For safety, ensuring the main previewView is not the target when external is active:
-                // currentPreview.setSurfaceProvider(null) // This would detach ALL surfaces. Not what we want.
-                // Instead, rely on ViewModel to manage which surface is connected to the Preview object.
-                // If ViewModel sets external display's surface, this LaunchedEffect should not fight it for main screen.
-                // So, only set main screen's surface if no external display is active.
-            } else {
-                Log.d("CameraScreen", "No external display. Setting main PreviewView's surfaceProvider.")
-                currentPreview.setSurfaceProvider(previewView.surfaceProvider)
-            }
-        } else {
-            Log.d("CameraScreen", "activePreview is null. Main PreviewView's surfaceProvider cannot be set.")
-            // Potentially clear the surface from previewView if necessary, though usually it's managed by CameraX when Preview is unbound.
-            // previewView.surfaceProvider = null; // This is not how you clear it.
-        }
+    LaunchedEffect(activePreview, previewView.surfaceProvider) { // Keyed by activePreview and surfaceProvider
+        activePreview?.setSurfaceProvider(previewView.surfaceProvider)
+        Log.d("CameraScreen", "Main PreviewView's surfaceProvider was (re)set for activePreview.")
+        // When activePreview becomes null (on detach), this won't run to set it to null.
+        // The ViewModel's unbindAll() and setting _activePreviewUseCase.value = null should handle detachment from CameraX core.
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -161,62 +142,21 @@ fun CameraScreen(
                     Spacer(modifier = Modifier.weight(1f)) // Keep spacing if no switch
                 }
 
-                // New Rotate External Display Button
-                if (isExternalDisplayConnected) {
-                    IconButton(onClick = {
-                        Log.d("CameraScreen", "Rotate external display button clicked")
-                        viewModel.rotateExternalDisplay()
-                    }) {
-                        Icon(
-                            imageVector = Icons.Filled.Refresh,
-                            contentDescription = "Rotate External Display",
-                            tint = MaterialTheme.colorScheme.onPrimaryContainer // Consistent with camera switch
-                        )
-                    }
-                } else {
-                     Spacer(modifier = Modifier.weight(1f)) // Occupy space if no rotate button
-                }
+                // New Rotate External Display Button - REMOVED
+                // Spacer to maintain balance if only one button (camera switch) is present
+                // If availableLenses.size <= 1, then two spacers will center nothing, which is fine.
+                // If availableLenses.size > 1, then camera switch is on left, spacer on right.
+                // This assumes we want the camera switch button to be on the left if it's the only one.
+                // If centered is preferred, Row arrangement might need to change or use more spacers.
+                Spacer(modifier = Modifier.weight(1f))
 
-                // External Display Indicator / Info Button (TV icon)
-                if (isExternalDisplayConnected) {
-                    IconButton(onClick = {
-                        Log.d("CameraScreen", "External display icon clicked, requesting info.")
-                        viewModel.requestExternalDisplayInfo()
-                    }) {
-                        Icon(
-                            imageVector = Icons.Filled.Tv,
-                            contentDescription = "External Display Connected - Show Info",
-                            tint = MaterialTheme.colorScheme.primary // Keep primary for info
-                        )
-                    }
-                } else {
-                    Spacer(modifier = Modifier.weight(1f)) // Occupy space if no TV icon
-                }
+
+                // External Display Indicator / Info Button (TV icon) - REMOVED
+                // Spacer to maintain balance if only one button (camera switch) is present
+                Spacer(modifier = Modifier.weight(1f))
             }
         }
 
-        // AlertDialog for External Display Info
-        externalDisplayInfo?.let { info ->
-            AlertDialog(
-                onDismissRequest = {
-                    viewModel.clearExternalDisplayInfo()
-                },
-                title = { Text("External Display Information") },
-                text = {
-                    Box(modifier = Modifier.heightIn(max = 400.dp)) { // Constrain the max height
-                        val scrollState = rememberScrollState()
-                        Text(
-                            text = info, // This is the externalDisplayDetailedInfo string
-                            modifier = Modifier.verticalScroll(scrollState)
-                        )
-                    }
-                },
-                confirmButton = {
-                    Button(onClick = { viewModel.clearExternalDisplayInfo() }) {
-                        Text("OK")
-                    }
-                }
-            )
-        }
+        // AlertDialog for External Display Info - REMOVED
     }
 }

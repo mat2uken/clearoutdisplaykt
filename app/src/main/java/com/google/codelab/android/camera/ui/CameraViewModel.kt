@@ -1,31 +1,25 @@
 package com.google.codelab.android.camera.ui
 
 import android.app.Application
-import android.content.Context
-import android.hardware.display.DisplayManager
-import android.os.Handler
-import android.os.Looper
-import android.util.DisplayMetrics
+// import android.content.Context // ContextCompat.getMainExecutor needs it, Application is a Context.
 import android.util.Log
-import android.view.Display
-import android.view.Surface
+import android.view.Surface // Still needed for Surface.ROTATION_0
 import androidx.camera.core.CameraInfo
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.Preview
 import androidx.camera.core.ZoomState
 import androidx.camera.lifecycle.ProcessCameraProvider
-import androidx.compose.runtime.mutableStateOf
+// import androidx.compose.runtime.mutableStateOf // Not directly used in this file
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LifecycleOwner
-// import androidx.lifecycle.Observer // No longer needed for LiveData
 import androidx.lifecycle.viewModelScope
-import com.google.codelab.android.camera.ExternalDisplayPresentation
+// import com.google.codelab.android.camera.ExternalDisplayPresentation // Removed
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import java.lang.StringBuilder
+// import java.lang.StringBuilder // Removed
 import java.util.concurrent.Executor
 
 class CameraViewModel(application: Application) : AndroidViewModel(application) {
@@ -33,10 +27,10 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
     private val _cameraProviderFuture by lazy { ProcessCameraProvider.getInstance(application) }
     private val cameraProvider: ProcessCameraProvider get() = _cameraProviderFuture.get()
     private val mainExecutor: Executor by lazy { ContextCompat.getMainExecutor(application) }
-    private val displayManager by lazy { application.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager }
+    // private val displayManager by lazy { application.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager } // Removed
 
     private var camera: androidx.camera.core.Camera? = null
-    private var externalDisplayPresentation: ExternalDisplayPresentation? = null
+    // private var externalDisplayPresentation: ExternalDisplayPresentation? = null // Removed
     // private var previewUseCase: Preview? = null // Replaced by _activePreviewUseCase
     private var currentLifecycleOwner: LifecycleOwner? = null
 
@@ -65,23 +59,23 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
     val linearZoom: StateFlow<Float> = _linearZoom.asStateFlow()
 
 
-    // --- External Display State ---
-    private val _isExternalDisplayConnected = MutableStateFlow(false)
-    val isExternalDisplayConnected: StateFlow<Boolean> = _isExternalDisplayConnected.asStateFlow()
+    // --- External Display State --- // All Removed
+    // private val _isExternalDisplayConnected = MutableStateFlow(false)
+    // val isExternalDisplayConnected: StateFlow<Boolean> = _isExternalDisplayConnected.asStateFlow()
 
-    private val _externalDisplayDetailedInfo = MutableStateFlow<String?>(null)
-    val externalDisplayDetailedInfo: StateFlow<String?> = _externalDisplayDetailedInfo.asStateFlow()
+    // private val _externalDisplayDetailedInfo = MutableStateFlow<String?>(null)
+    // val externalDisplayDetailedInfo: StateFlow<String?> = _externalDisplayDetailedInfo.asStateFlow()
 
-    private val _externalDisplayRotationDegrees = MutableStateFlow(Surface.ROTATION_0) // Use Surface constants
-    val externalDisplayRotationDegrees: StateFlow<Int> = _externalDisplayRotationDegrees.asStateFlow()
+    // private val _externalDisplayRotationDegrees = MutableStateFlow(Surface.ROTATION_0) // Use Surface constants
+    // val externalDisplayRotationDegrees: StateFlow<Int> = _externalDisplayRotationDegrees.asStateFlow()
 
-    private val _cameraOutputResolution = MutableStateFlow<String?>(null)
-    val cameraOutputResolution: StateFlow<String?> = _cameraOutputResolution.asStateFlow()
+    // private val _cameraOutputResolution = MutableStateFlow<String?>(null)
+    // val cameraOutputResolution: StateFlow<String?> = _cameraOutputResolution.asStateFlow()
 
     private val _toastMessage = MutableStateFlow<String?>(null)
     val toastMessage: StateFlow<String?> = _toastMessage.asStateFlow()
 
-    private lateinit var displayListener: DisplayManager.DisplayListener
+    // private lateinit var displayListener: DisplayManager.DisplayListener // Removed
 
     init {
         viewModelScope.launch {
@@ -89,26 +83,16 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
                 updateAvailableLenses()
                 // We now need LifecycleOwner to bind, so initial bind might be deferred
                 // to when attachLifecycleOwner is called.
+                // If currentLifecycleOwner is already set, trigger a bind.
+                currentLifecycleOwner?.let {
+                    if (_cameraProviderFuture.isDone) { // Ensure provider is truly ready
+                        Log.d("CameraViewModel", "CameraProvider ready via future listener in init. Binding use cases.")
+                        bindCameraUseCases(it)
+                    }
+                }
             }, mainExecutor)
         }
-        displayListener = object : DisplayManager.DisplayListener {
-            override fun onDisplayAdded(displayId: Int) {
-                Log.d("CameraViewModel", "Display $displayId added. Resetting external display rotation to Surface.ROTATION_0.")
-                _externalDisplayRotationDegrees.value = Surface.ROTATION_0 // Reset rotation for any new display
-                checkForExternalDisplays() // This will call showExternalPresentation
-                _toastMessage.value = "External display connected"
-                requestExternalDisplayInfo()
-            }
-            override fun onDisplayRemoved(displayId: Int) {
-                checkForExternalDisplays()
-                _toastMessage.value = "External display disconnected"
-            }
-            override fun onDisplayChanged(displayId: Int) {
-                checkForExternalDisplays()
-            }
-        }
-        registerDisplayListener()
-        checkForExternalDisplays() // Initial check
+        // All display listener logic removed
     }
 
     // --- Camera Control Functions ---
@@ -139,7 +123,7 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
         currentLifecycleOwner = null
         cameraProvider.unbindAll()
         _activePreviewUseCase.value = null
-        _cameraOutputResolution.value = null // Clear resolution info
+        // _cameraOutputResolution.value = null // This StateFlow is being removed
     }
 
     private fun updateAvailableLenses() {
@@ -193,9 +177,10 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
         _activePreviewUseCase.value?.setSurfaceProvider(null)
         _activePreviewUseCase.value = null
 
-        Log.d("CameraViewModel", "Creating Preview use case with targetRotation: ${_externalDisplayRotationDegrees.value}")
+        // Log.d("CameraViewModel", "Creating Preview use case with targetRotation: ${_externalDisplayRotationDegrees.value}") // _externalDisplayRotationDegrees removed
+        Log.d("CameraViewModel", "Creating Preview use case with targetRotation: Surface.ROTATION_0")
         val newPreview = Preview.Builder()
-            .setTargetRotation(_externalDisplayRotationDegrees.value)
+            .setTargetRotation(Surface.ROTATION_0) // Default to Surface.ROTATION_0
             .build()
 
         _activePreviewUseCase.value = newPreview // Expose the new preview use case
@@ -216,33 +201,18 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
             updateZoomLimits(camera?.cameraInfo)
             setLinearZoom(_linearZoom.value)
 
-            // Synchronously get resolution info after binding
-            val currentBoundPreview = _activePreviewUseCase.value
-            if (currentBoundPreview != null) {
-                val resolutionInfo = currentBoundPreview.resolutionInfo // Synchronous call
-                if (resolutionInfo != null) {
-                    val size = resolutionInfo.resolution
-                    _cameraOutputResolution.value = "PreviewRes: ${size.width}x${size.height} (Rot:${resolutionInfo.rotationDegrees}°)"
-                    Log.d("CameraViewModel", "Preview resolution (synced after bind): ${_cameraOutputResolution.value}")
-                } else {
-                    _cameraOutputResolution.value = "PreviewRes: N/A (Info null post-bind)"
-                    Log.d("CameraViewModel", "Preview resolutionInfo is null post-bind.")
-                }
-            } else {
-                _cameraOutputResolution.value = "PreviewRes: N/A (Preview UC null post-bind)"
-                Log.d("CameraViewModel", "Preview use case is null post-bind, cannot get resolution.")
-            }
+            // Synchronous resolution info retrieval removed as _cameraOutputResolution is removed.
 
-            // If an external display is active, immediately set its surface provider.
-            // CameraScreen will handle the main display's surface provider via observing _activePreviewUseCase.
-            if (_isExternalDisplayConnected.value && externalDisplayPresentation != null) {
-                Log.d("CameraViewModel", "External display is connected, setting its SurfaceProvider on new Preview.")
-                newPreview.setSurfaceProvider(externalDisplayPresentation!!.getPreviewView().surfaceProvider)
-            }
+            // External display surface provider logic removed.
+            // if (_isExternalDisplayConnected.value && externalDisplayPresentation != null) {
+            //     Log.d("CameraViewModel", "External display is connected, setting its SurfaceProvider on new Preview.")
+            //     newPreview.setSurfaceProvider(externalDisplayPresentation!!.getPreviewView().surfaceProvider)
+            // }
 
         } catch (exc: Exception) {
             Log.e("CameraViewModel", "Failed to bind camera use cases with new preview", exc)
             _activePreviewUseCase.value = null
+            // _cameraOutputResolution.value = null; // This StateFlow is removed
             _toastMessage.value = "Failed to bind camera: ${exc.message}"
         }
     }
@@ -265,173 +235,20 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
         _toastMessage.value = null
     }
 
-    // --- External Display Handling ---
-
-    private fun registerDisplayListener() {
-        displayManager.registerDisplayListener(displayListener, Handler(Looper.getMainLooper()))
-    }
-
-    private fun unregisterDisplayListener() {
-        displayManager.unregisterDisplayListener(displayListener)
-    }
-
-    private fun checkForExternalDisplays() {
-        val displays = displayManager.getDisplays(DisplayManager.DISPLAY_CATEGORY_PRESENTATION)
-        if (displays.isNotEmpty()) {
-            _isExternalDisplayConnected.value = true
-            showExternalPresentation(displays[0])
-        } else {
-            _isExternalDisplayConnected.value = false
-            dismissExternalPresentation()
-        }
-    }
-
-    private fun showExternalPresentation(display: Display) {
-        // Dismiss any existing presentation if it's for a different display or if current one is simply non-null
-        // This check ensures we only proceed if we're truly setting up for 'display'
-        // or if there's no current presentation.
-        if (externalDisplayPresentation != null && externalDisplayPresentation?.display?.displayId != display.displayId) {
-            dismissExternalPresentation(isPartOfRotationSequence = false) // It's a new display, so not part of rotation for old one
-        } else if (externalDisplayPresentation != null && externalDisplayPresentation?.display?.displayId == display.displayId) {
-            // This means we are "showing" the same display again, likely after a rotation.
-            // The old presentation instance for this display was already dismissed by rotateExternalDisplay()
-            // with isPartOfRotationSequence = true.
-            // So, externalDisplayPresentation should be null here if called from rotateExternalDisplay.
-            // If it's not null, it means something else called showExternalPresentation for the same display
-            // without dismissing. This shouldn't typically happen with current logic.
-            // For safety, dismiss it if it exists and we are trying to "show" it again.
-             Log.w("CameraViewModel", "showExternalPresentation called for the same display that's supposedly active. Dismissing first.")
-             dismissExternalPresentation(isPartOfRotationSequence = false) // Treat as a reset if this path is hit unexpectedly
-        }
-
-
-        // At this point, externalDisplayPresentation should be null, or we are about to replace it.
-        // The _externalDisplayRotationDegrees.value is either 0 (for a new display via onDisplayAdded)
-        // or the value set by rotateExternalDisplay().
-        // ExternalDisplayPresentation constructor is now 2-argument: (Context, Display)
-        externalDisplayPresentation = ExternalDisplayPresentation(
-            getApplication(),
-            display
-        )
-        Log.d("CameraViewModel", "Showing external presentation on display: ${display.displayId}. Rotation is handled by Preview use case.")
-        externalDisplayPresentation?.show()
-        // The following line used a stale reference 'previewUseCase'. It should be '_activePreviewUseCase.value'.
-        // And this logic is now in bindCameraUseCases and after externalDisplayPresentation.show()
-        // _activePreviewUseCase.value?.setSurfaceProvider(externalDisplayPresentation?.getPreviewView()?.surfaceProvider)
-        // Corrected logic for setting surface provider on the *active* use case:
-
-        // Restore surface provider logic
-        _activePreviewUseCase.value?.let { preview ->
-            externalDisplayPresentation?.getPreviewView()?.let { externalPreviewView ->
-                preview.setSurfaceProvider(externalPreviewView.surfaceProvider)
-                Log.d("CameraViewModel", "External display surface provider set on active preview use case.")
-            } ?: run {
-                Log.e("CameraViewModel", "ExternalDisplayPresentation or its getPreviewView() is null. Cannot set surface provider.")
-            }
-        } ?: run {
-             Log.w("CameraViewModel", "Cannot set surface provider for external display: _activePreviewUseCase is null.")
-        }
-        requestExternalDisplayInfo() // Request info when presentation is shown
-    }
-
-    private fun dismissExternalPresentation(isPartOfRotationSequence: Boolean = false) {
-        externalDisplayPresentation?.dismiss()
-        // The following line used a stale reference 'previewUseCase'. It should be '_activePreviewUseCase.value'.
-        // _activePreviewUseCase.value?.setSurfaceProvider(null) // This is correct from previous step.
-        Log.d("CameraViewModel", "External presentation dismissed. Part of rotation: $isPartOfRotationSequence")
-        externalDisplayPresentation = null
-        clearExternalDisplayInfo() // Clear detailed info when presentation is dismissed
-        if (!isPartOfRotationSequence) {
-            // _externalDisplayRotationDegrees.value = 0 // This was Surface.ROTATION_0 previously
-            _externalDisplayRotationDegrees.value = Surface.ROTATION_0 // Correcting to use Surface constant
-            Log.d("CameraViewModel", "Rotation reset to Surface.ROTATION_0 (not part of rotation sequence).")
-        }
-        // DO NOT REBIND HERE - CameraScreen's DisposableEffect will handle it if isExternalDisplayConnected changes
-    }
-
-    fun rotateExternalDisplay() {
-        val currentRotationDegrees = _externalDisplayRotationDegrees.value
-        val newRotationDegrees = (currentRotationDegrees + 90) % 360
-        _externalDisplayRotationDegrees.value = newRotationDegrees // Set the new desired rotation
-
-        Log.d("CameraViewModel", "Rotate external display requested. New rotation: $newRotationDegrees degrees.")
-
-        val currentDisplay = externalDisplayPresentation?.display
-        if (isExternalDisplayConnected.value && currentDisplay != null) {
-            // We have an active presentation on a display.
-            // Dismiss it (signaling it's part of rotation so rotation state isn't zeroed)
-            // and then show it again (it will pick up the new _externalDisplayRotationDegrees value).
-            dismissExternalPresentation(isPartOfRotationSequence = true)
-            showExternalPresentation(currentDisplay) // This will use the new _externalDisplayRotationDegrees
-            _toastMessage.value = "External display rotated to $newRotationDegrees°"
-        } else if (isExternalDisplayConnected.value) {
-            // A display is connected, but no presentation is currently active.
-            Log.d("CameraViewModel", "Rotate requested: Display connected, but no active presentation. Attempting to show new one.")
-            val displays = displayManager.getDisplays(DisplayManager.DISPLAY_CATEGORY_PRESENTATION)
-            if (displays.isNotEmpty()) {
-                // _externalDisplayRotationDegrees is already set to newRotationDegrees.
-                // showExternalPresentation will use this value.
-                showExternalPresentation(displays[0])
-                _toastMessage.value = "External display shown with $newRotationDegrees° rotation."
-            } else {
-                Log.e("CameraViewModel", "Rotate requested: isExternalDisplayConnected true, but no displays found by DisplayManager.")
-                _toastMessage.value = "Error: No display found to rotate."
-                _externalDisplayRotationDegrees.value = currentRotationDegrees // Revert to old rotation
-            }
-        } else {
-            Log.d("CameraViewModel", "Rotate requested: No external display connected.")
-            _toastMessage.value = "No external display to rotate."
-             _externalDisplayRotationDegrees.value = currentRotationDegrees // Revert to old rotation as action failed
-        }
-    }
-
-    fun requestExternalDisplayInfo() {
-        val displays = displayManager.getDisplays(DisplayManager.DISPLAY_CATEGORY_PRESENTATION)
-        if (displays.isNotEmpty()) {
-            val display = displays[0] // Assuming the first one is the one of interest
-            val metrics = DisplayMetrics()
-            @Suppress("DEPRECATION") // getRealMetrics is deprecated but necessary for older APIs if not handled by WindowManager
-            display.getRealMetrics(metrics)
-
-            val rotationDegrees = when (display.rotation) {
-                Surface.ROTATION_0 -> "0°"
-                Surface.ROTATION_90 -> "90°"
-                Surface.ROTATION_180 -> "180°"
-                Surface.ROTATION_270 -> "270°"
-                else -> "Unknown"
-            }
-
-            val info = StringBuilder()
-            info.append("Display ID: ${display.displayId}\n")
-            info.append("Name: ${display.name}\n")
-            info.append("Width: ${metrics.widthPixels}px\n")
-            info.append("Height: ${metrics.heightPixels}px\n")
-            info.append("Density DPI: ${metrics.densityDpi}\n")
-            info.append("Actual X DPI: ${metrics.xdpi}\n")
-            info.append("Actual Y DPI: ${metrics.ydpi}\n")
-            info.append("Reported Rotation: $rotationDegrees (relative to natural orientation)\n")
-            info.append("Refresh Rate: ${display.mode.refreshRate} Hz\n")
-            // Add more info if deemed necessary, e.g., display.state
-
-            val previewResStr = _cameraOutputResolution.value ?: "PreviewRes: N/A (Not fetched yet)"
-            info.append("$previewResStr\n")
-
-            _externalDisplayDetailedInfo.value = info.toString()
-            Log.d("CameraViewModel", "External display info collected: ${info.toString().replace("\n", ", ")}")
-        } else {
-            _externalDisplayDetailedInfo.value = "No external display connected."
-            Log.d("CameraViewModel", "Request for external display info, but no display connected.")
-        }
-    }
-
-    fun clearExternalDisplayInfo() {
-        _externalDisplayDetailedInfo.value = null
-    }
+    // --- External Display Handling --- // All methods removed
+    // private fun registerDisplayListener() { ... }
+    // private fun unregisterDisplayListener() { ... }
+    // private fun checkForExternalDisplays() { ... }
+    // private fun showExternalPresentation(display: Display) { ... }
+    // private fun dismissExternalPresentation(isPartOfRotationSequence: Boolean = false) { ... }
+    // fun rotateExternalDisplay() { ... }
+    // fun requestExternalDisplayInfo() { ... }
+    // fun clearExternalDisplayInfo() { ... }
 
     override fun onCleared() {
         super.onCleared()
-        unregisterDisplayListener()
+        // unregisterDisplayListener() // Removed
         detachLifecycleOwner() // Ensure unbinding and cleanup
-        dismissExternalPresentation()
+        // dismissExternalPresentation() // Removed
     }
 }
