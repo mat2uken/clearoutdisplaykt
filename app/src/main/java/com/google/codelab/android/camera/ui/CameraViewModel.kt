@@ -7,6 +7,7 @@ import android.view.Surface // Still needed for Surface.ROTATION_0
 import androidx.camera.core.CameraInfo
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.Preview
+import androidx.camera.core.UseCase
 import androidx.camera.core.ZoomState
 import androidx.camera.lifecycle.ProcessCameraProvider
 // import androidx.compose.runtime.mutableStateOf // Not directly used in this file
@@ -185,9 +186,13 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
 
         _activePreviewUseCase.value = newPreview // Expose the new preview use case
 
+        Log.d("CameraViewModel", "bindCameraUseCases: Entering. About to unbind all. Current main previewUseCase: ${this.previewUseCase}, its SurfaceInfo: (see notes in task). Current externalPreviewUseCase: ${this.externalPreviewUseCase}, its SurfaceInfo: (see notes in task).")
+        cameraProvider.unbindAll() // Existing unbind
+
         val cameraSelector = CameraSelector.Builder()
             .requireLensFacing(_selectedLensFacing.value)
             .build()
+
         try {
             Log.d("CameraViewModel", "Binding to lifecycle with selector: ${_selectedLensFacing.value}")
             // The Preview object is now created here. CameraScreen will observe _activePreviewUseCase
@@ -196,8 +201,12 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
                 lifecycleOwner,
                 cameraSelector,
                 newPreview
+                *useCases.toTypedArray()
             )
-            Log.d("CameraViewModel", "Successfully bound to lifecycle. Camera: $camera")
+            Log.d("CameraViewModel", "bindCameraUseCases: Successfully bound to lifecycle. Camera: $camera. Main previewUseCase: ${this.previewUseCase}. External externalPreviewUseCase: ${this.externalPreviewUseCase}.")
+            // Log.d("CameraViewModel", "Successfully bound to lifecycle. Camera: $camera. Bound ${useCases.size} use cases.") // Replaced by more detailed log
+            // Log.d("CameraViewModel", "Binding to lifecycle with selector: ${_selectedLensFacing.value} and preview: $previewUseCase") // This log is too generic now
+
             updateZoomLimits(camera?.cameraInfo)
             setLinearZoom(_linearZoom.value)
 
@@ -208,7 +217,6 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
             //     Log.d("CameraViewModel", "External display is connected, setting its SurfaceProvider on new Preview.")
             //     newPreview.setSurfaceProvider(externalDisplayPresentation!!.getPreviewView().surfaceProvider)
             // }
-
         } catch (exc: Exception) {
             Log.e("CameraViewModel", "Failed to bind camera use cases with new preview", exc)
             _activePreviewUseCase.value = null
