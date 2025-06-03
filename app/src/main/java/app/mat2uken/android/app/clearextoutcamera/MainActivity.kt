@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.lifecycle.LifecycleOwner // Added this import
+import androidx.compose.runtime.livedata.observeAsState // Added this import
 // import androidx.compose.ui.tooling.preview.Preview // Removed for aliasing
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.material3.Slider
@@ -150,6 +151,13 @@ fun ZoomControl(cameraManager: CameraManager) {
     }
 
     Text("Zoom", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
+    // Display the current zoom ratio value
+    Text(
+        text = "Current Ratio: ${String.format("%.2f", currentZoomRatio)}x",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurface,
+        modifier = Modifier.padding(start = 8.dp) // Add some padding for better appearance
+    )
     Slider(
         value = currentZoomRatio,
         // Ensuring the lambda parameter is explicitly named, which it already is.

@@ -68,6 +68,7 @@ dependencies {
     implementation("androidx.camera:camera-lifecycle:${cameraxVersion}")
     implementation("androidx.camera:camera-view:${cameraxVersion}")
     implementation("androidx.lifecycle:lifecycle-livedata-ktx:2.8.0")
+    implementation("androidx.compose.runtime:runtime-livedata:1.6.6") // Aligned with Compose UI 1.6.6
 
     // Accompanist
     val accompanistVersion = "0.34.0"
