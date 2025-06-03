@@ -7,6 +7,7 @@ import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.ZoomState // Added this import
 // import androidx.camera.core.Preview // Removed, CameraManager handles its own Preview objects
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView // This is specific enough
@@ -155,7 +156,7 @@ fun ZoomControl(cameraManager: CameraManager) {
     var currentSliderPosition by remember { mutableFloatStateOf(actualZoomState?.zoomRatio ?: zoomRatioRange.start) }
 
     // Effect to update the slider's position if the underlying LiveData (actualZoomState?.zoomRatio) changes.
-    LaunchedEffect(actualZoomState?.zoomRatio) {
+    LaunchedEffect(actualZoomState?.zoomRatio) { // Ensuring lambda takes no parameters, which it already does.
         actualZoomState?.zoomRatio?.let { newRatioFromLiveData ->
             if (currentSliderPosition != newRatioFromLiveData) { // Avoid recomposition loop if already in sync
                 currentSliderPosition = newRatioFromLiveData
