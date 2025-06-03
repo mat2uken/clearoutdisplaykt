@@ -7,9 +7,9 @@ import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.camera.core.CameraSelector
-import androidx.camera.core.Preview
+// import androidx.camera.core.Preview // Removed, CameraManager handles its own Preview objects
 import androidx.camera.lifecycle.ProcessCameraProvider
-import androidx.camera.view.PreviewView
+import androidx.camera.view.PreviewView // This is specific enough
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -17,10 +17,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
-import androidx.compose.ui.tooling.preview.Preview
+import androidx.lifecycle.LifecycleOwner // Added this import
+// import androidx.compose.ui.tooling.preview.Preview // Removed for aliasing
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.material3.Slider
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.tooling.preview.Preview as ComposablePreview
 import androidx.core.content.ContextCompat
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
@@ -150,9 +152,11 @@ fun ZoomControl(cameraManager: CameraManager) {
     Text("Zoom", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
     Slider(
         value = currentZoomRatio,
-        onValueChange = { newValue ->
-            currentZoomRatio = newValue
-            cameraManager.setZoomRatio(newValue)
+        // Ensuring the lambda parameter is explicitly named, which it already is.
+        // This change is effectively a no-op to confirm the existing correct structure.
+        onValueChange = { updatedZoomValue ->
+            currentZoomRatio = updatedZoomValue
+            cameraManager.setZoomRatio(updatedZoomValue)
         },
         valueRange = zoomRatioRange,
         modifier = Modifier.fillMaxWidth()
@@ -230,7 +234,7 @@ fun ClearExtOutCameraTheme(content: @Composable () -> Unit) {
     }
 }
 
-@Preview(showBackground = true)
+@ComposablePreview(showBackground = true) // Changed to aliased import
 @Composable
 fun DefaultPreview() {
     ClearExtOutCameraTheme {
@@ -244,7 +248,7 @@ fun DefaultPreview() {
 }
 
 
-@Preview(showBackground = true)
+@ComposablePreview(showBackground = true) // Changed to aliased import
 @Composable
 fun PermissionDeniedPreview() {
     ClearExtOutCameraTheme {
